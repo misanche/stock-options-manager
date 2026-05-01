@@ -602,3 +602,15 @@ Bug: Phase 2 agent used pivot point values (R1/R2/R3, S1/S2/S3) as literal strik
 **Session Log:** `.squad/log/20260425T064358-strike-snapping-fix.md`
 
 Strike snapping decision finalized and merged into team decisions.md. Both instruction files updated to clarify that pivot point levels are guidance only — agents snap to nearest available strikes in safe direction (UP for calls, DOWN for puts). Decision promoted from inbox to permanent record. Inbox cleaned. Cross-agent awareness flagged for Linus (roll economics validation workflows).
+
+### README Update — Two-Phase Architecture (2026-04-25)
+**Status:** ✅ Completed
+**Commit:** b434102
+
+Updated README.md with 5 surgical edits:
+1. Flow diagram updated for two-phase monitor pipeline (Assessment → Roll Management)
+2. New "Options Chain Filter Pipeline" subsection (4-stage filter + candidates table)
+3. Telegram notifications updated for enriched formatting (premium, roll economics, buyback cost)
+4. Project structure updated: instruction files split into assessment + roll pairs, added options_chain_parser.py
+5. Settings description updated with Agent Chain Pipeline debug view
+6. Verified position delete button text is already generic enough — no change needed
