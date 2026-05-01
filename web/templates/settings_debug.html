@@ -72,6 +72,33 @@
     </div>
 </div>
 
+<!-- Cache Management -->
+<div class="card settings-card">
+    <div class="card-header">
+        <h2>🧹 Cache Management</h2>
+    </div>
+    <div style="padding: 0.75rem 1.25rem;">
+        <div class="detail-row">
+            <div class="detail-label">Cached entries</div>
+            <div class="detail-value mono" id="cacheEntryCount">{{ cache_stats.total_entries }}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Cached symbols</div>
+            <div class="detail-value mono" id="cacheSymbols">
+                {% if cache_stats.symbols %}
+                    {{ cache_stats.symbols | join(', ') }}
+                {% else %}
+                    <span style="opacity:0.5;">None</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center;">
+            <button class="btn btn-primary" id="btnClearCache" style="background: var(--accent-red, #e23b4a);">🗑️ Clear All Caches</button>
+            <span id="clearCacheStatus" class="mono" style="font-size:0.85rem; opacity:0.7;"></span>
+        </div>
+    </div>
+</div>
+
 <!-- CosmosDB Diagnostics -->
 <div class="card settings-card">
     <div class="card-header">
@@ -275,6 +302,34 @@
             btn.disabled = false;
             spinner.style.display = 'none';
         }
+    });
+})();
+
+// Clear Cache
+(function() {
+    var btn = document.getElementById('btnClearCache');
+    var status = document.getElementById('clearCacheStatus');
+    btn.addEventListener('click', function() {
+        btn.disabled = true;
+        status.textContent = 'Clearing...';
+        fetch('/api/debug/clear-cache', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    status.style.color = 'var(--accent-green, #2ecc71)';
+                    status.textContent = '✅ Cleared ' + data.cleared + ' entries';
+                    document.getElementById('cacheEntryCount').textContent = '0';
+                    document.getElementById('cacheSymbols').innerHTML = '<span style="opacity:0.5;">None</span>';
+                } else {
+                    status.style.color = 'var(--accent-red, #e23b4a)';
+                    status.textContent = '❌ Failed';
+                }
+            })
+            .catch(function() {
+                status.style.color = 'var(--accent-red, #e23b4a)';
+                status.textContent = '❌ Request failed';
+            })
+            .finally(function() { btn.disabled = false; });
     });
 })();
 </script>

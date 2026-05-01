@@ -1892,6 +1892,17 @@ async def settings_runtime_page(request: Request):
     })
 
 
+@app.post("/api/debug/clear-cache")
+async def api_debug_clear_cache():
+    """Clear all TradingView cache entries."""
+    from src.tv_cache import get_tv_cache
+    cache = get_tv_cache()
+    stats = cache.stats()
+    cleared = stats["total_entries"]
+    cache.clear_all()
+    return JSONResponse({"success": True, "cleared": cleared})
+
+
 @app.get("/settings/debug", response_class=HTMLResponse)
 async def settings_debug_page(request: Request):
     """Debug page — TradingView fetch and CosmosDB diagnostics."""
@@ -1903,6 +1914,10 @@ async def settings_debug_page(request: Request):
     cosmos_database = config.get("cosmosdb", {}).get("database", "stock-options-manager")
     cosmos_status = "Connected" if cosmos else "Not connected"
     cosmos_error = getattr(request.app.state, "cosmos_error", None)
+    
+    # Cache stats
+    from src.tv_cache import get_tv_cache
+    cache_stats = get_tv_cache().stats()
     
     # Get symbols for debug dropdown
     symbols = []
@@ -1919,6 +1934,7 @@ async def settings_debug_page(request: Request):
         "cosmos_status": cosmos_status,
         "cosmos_error": cosmos_error,
         "symbols": symbols,
+        "cache_stats": cache_stats,
     })
 
 
