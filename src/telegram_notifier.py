@@ -224,6 +224,57 @@ class TelegramNotifier:
 
         return "\n".join(lines)
 
+    # ── prolonged WAIT alert ──────────────────────────────────────────
+
+    def send_prolonged_wait_alert(
+        self,
+        symbol: str,
+        agent_type: str,
+        contrarian_view: Dict,
+        consecutive_waits: int = 5,
+    ) -> bool:
+        """Send a Telegram notification for prolonged WAIT patterns.
+
+        Returns True if sent successfully, False otherwise.
+        """
+        if not self._is_symbol_notifications_enabled(symbol):
+            logger.debug("Telegram notifications disabled for symbol %s", symbol)
+            return False
+
+        creds = self._get_credentials()
+        if creds is None:
+            return False
+
+        try:
+            label = AGENT_LABELS.get(agent_type, agent_type)
+            strength = contrarian_view.get("challenge_strength", "N/A")
+            one_liner = contrarian_view.get("one_liner", "")
+            net_assessment = contrarian_view.get("net_assessment", "")
+            counter_args = contrarian_view.get("counter_arguments", [])
+
+            lines = [
+                f"\u23f3 <b>PROLONGED WAIT: {symbol}</b> ({label})",
+                f"{consecutive_waits} consecutive WAIT decisions",
+                "",
+                f"\u26a1 Contrarian [{strength}]: {one_liner}",
+            ]
+
+            if counter_args:
+                lines.append("")
+                lines.append("Counter-arguments:")
+                for i, arg in enumerate(counter_args, 1):
+                    point = arg.get("point", str(arg)) if isinstance(arg, dict) else str(arg)
+                    lines.append(f"  {i}. {point}")
+
+            if net_assessment:
+                lines.append("")
+                lines.append(f"Verdict: {net_assessment}")
+
+            return self._send(creds[0], creds[1], "\n".join(lines))
+        except Exception:
+            logger.warning("Failed to build prolonged WAIT alert for %s", symbol, exc_info=True)
+            return False
+
     # ── low-level send ────────────────────────────────────────────────
 
     def send_message(self, text: str, parse_mode: str = "HTML") -> bool:

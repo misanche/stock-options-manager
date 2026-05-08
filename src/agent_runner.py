@@ -58,6 +58,8 @@ logger.addHandler(_console_handler)
 
 class AgentRunner:
     """Manages agent execution using Microsoft Agent Framework with TradingView pre-fetch."""
+
+    PROLONGED_WAIT_THRESHOLD = 5
     
     def __init__(self, project_endpoint: str, model: str, api_key: str,
                  telegram_notifier=None):
@@ -297,6 +299,53 @@ class AgentRunner:
             if "risk_flags" in json_data:
                 enrichment["risk_flags"] = json_data["risk_flags"]
         return enrichment
+
+    # ------------------------------------------------------------------
+    # Prolonged WAIT detection
+    # ------------------------------------------------------------------
+
+    def _detect_prolonged_wait(
+        self,
+        cosmos: "CosmosDBService",
+        symbol: str,
+        agent_type: str,
+        position_id: str | None = None,
+        threshold: int | None = None,
+    ) -> bool:
+        """Check if the last N activities for this symbol/position were all WAITs.
+
+        Returns True if the most recent ``threshold`` activities are all
+        non-alert WAIT decisions (indicating the agent has been passive
+        for too long).  Never raises — returns False on any error so the
+        pipeline is never blocked.
+        """
+        if threshold is None:
+            threshold = self.PROLONGED_WAIT_THRESHOLD
+        try:
+            recent = cosmos.get_recent_activities(
+                symbol=symbol,
+                agent_type=agent_type,
+                max_entries=threshold,
+                position_id=position_id,
+                include_alerts=True,
+            )
+            if len(recent) < threshold:
+                return False
+            for act in recent:
+                if act.get("error"):
+                    return False
+                if act.get("is_alert", False):
+                    return False
+                activity = str(act.get("activity", "")).upper()
+                if activity != "WAIT":
+                    return False
+            return True
+        except Exception:
+            logger.debug(
+                "Prolonged WAIT check failed for %s/%s — defaulting to False",
+                symbol, agent_type, exc_info=True,
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Contrarian Agent — post-decision challenge (Phase 3)
@@ -606,7 +655,34 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                     )
                     print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
             else:
-                print(f"Logged activity")
+                # Check for prolonged WAIT pattern (5+ consecutive)
+                if self._detect_prolonged_wait(cosmos, symbol, agent_type):
+                    print(f"⏳ Prolonged WAIT detected for {full_symbol} — triggering contrarian review")
+                    market_data = self._build_market_data_block(data, symbol, exchange)
+                    contrarian_view = await self._run_contrarian_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    )
+                    if contrarian_view is not None:
+                        cosmos.update_activity_field(
+                            doc_id=dec_doc["id"],
+                            symbol=symbol,
+                            field="contrarian_view",
+                            value=contrarian_view,
+                        )
+                        print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+                        if (self.telegram_notifier and
+                                contrarian_view.get("challenge_strength") in ("MODERATE", "STRONG")):
+                            self.telegram_notifier.send_prolonged_wait_alert(
+                                symbol=symbol,
+                                agent_type=agent_type,
+                                contrarian_view=contrarian_view,
+                                consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                            )
+                else:
+                    print(f"Logged activity")
 
         except Exception as e:
             logger.error(
@@ -1255,7 +1331,34 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     )
                     print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
             else:
-                print(f"Logged activity")
+                # Check for prolonged WAIT pattern (5+ consecutive)
+                if self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id):
+                    print(f"⏳ Prolonged WAIT detected for {full_symbol} ${strike} — triggering contrarian review")
+                    market_data = self._build_market_data_block(data, symbol, exchange)
+                    contrarian_view = await self._run_contrarian_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    )
+                    if contrarian_view is not None:
+                        cosmos.update_activity_field(
+                            doc_id=dec_doc["id"],
+                            symbol=symbol,
+                            field="contrarian_view",
+                            value=contrarian_view,
+                        )
+                        print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+                        if (self.telegram_notifier and
+                                contrarian_view.get("challenge_strength") in ("MODERATE", "STRONG")):
+                            self.telegram_notifier.send_prolonged_wait_alert(
+                                symbol=symbol,
+                                agent_type=agent_type,
+                                contrarian_view=contrarian_view,
+                                consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                            )
+                else:
+                    print(f"Logged activity")
 
         except Exception as e:
             logger.error(

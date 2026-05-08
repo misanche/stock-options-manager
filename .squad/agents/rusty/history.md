@@ -640,3 +640,6 @@ The contrarian pattern (run after persistence, update via patch) keeps the criti
 
 ### Telegram Noise Filtering by Strength
 Only MODERATE and STRONG contrarian challenges appear in Telegram alerts. WEAK challenges are stored in CosmosDB (visible in dashboard) but don't push to Telegram. This reduces notification fatigue while keeping the data available for review.
+
+### Prolonged WAIT Contrarian Detection
+When a position accumulates 5+ consecutive WAIT decisions (no alerts, no errors in between), the contrarian agent is now triggered even though `is_alert=False`. This catches capital-efficiency blind spots — theta stagnation, opportunity cost of idle positions. The threshold is a class constant (`PROLONGED_WAIT_THRESHOLD = 5`). Detection uses `get_recent_activities(include_alerts=True)` to see the full picture; if ANY alert or error exists in the window, it's not a prolonged WAIT. Telegram alerts use a dedicated format (`send_prolonged_wait_alert`) only for MODERATE/STRONG contrarian challenges.
