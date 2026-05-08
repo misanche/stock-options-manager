@@ -325,8 +325,8 @@ _VALID_DECISIONS: dict[str, set[str]] = {
                   "ROLL_UP_AND_OUT", "ROLL_DOWN_AND_OUT", "CLOSE"},
     "open_put": {"WAIT", "ROLL_DOWN", "ROLL_OUT",
                  "ROLL_DOWN_AND_OUT", "CLOSE"},
-    "covered_call": {"SELL", "NOT_NOW"},
-    "cash_secured_put": {"SELL", "NOT_NOW"},
+    "covered_call": {"SELL", "NOT_NOW", "WAIT"},
+    "cash_secured_put": {"SELL", "NOT_NOW", "WAIT"},
 }
 
 
