@@ -481,6 +481,25 @@ class CosmosDBService:
                 act_doc[key] = alert_data[key]
         return self.container.replace_item(act_doc, act_doc)
 
+    def update_activity_field(self, doc_id: str, symbol: str,
+                              field: str, value) -> bool:
+        """Update a single field on an existing activity document.
+
+        Reads the document, adds/updates the field, and writes it back.
+        Returns True on success, False on failure.
+        """
+        try:
+            doc = self.container.read_item(doc_id, partition_key=symbol)
+            doc[field] = value
+            self.container.replace_item(doc, doc)
+            return True
+        except Exception:
+            logger.warning(
+                "Failed to update field '%s' on doc %s (symbol=%s)",
+                field, doc_id, symbol, exc_info=True,
+            )
+            return False
+
     # TODO: Remove after migration - kept for backwards compatibility
     def write_alert(self, symbol: str, agent_type: str,
                      alert_data: dict, activity_id: str,

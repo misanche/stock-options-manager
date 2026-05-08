@@ -614,3 +614,29 @@ Updated README.md with 5 surgical edits:
 4. Project structure updated: instruction files split into assessment + roll pairs, added options_chain_parser.py
 5. Settings description updated with Agent Chain Pipeline debug view
 6. Verified position delete button text is already generic enough — no change needed
+
+### Contrarian Agent Pipeline Integration (2026-07-17)
+**Status:** ✅ Completed
+**Files:** src/agent_runner.py, src/cosmos_db.py, src/telegram_notifier.py
+
+Implemented the contrarian agent as Phase 3 of the decision pipeline per Danny's architecture proposal (Option A: Pipeline Automático). The contrarian only runs on alert decisions (SELL, ROLL, CLOSE) — never on WAITs.
+
+**Changes:**
+- **agent_runner.py:** Added `_run_contrarian_review()` method (separate ChatAgent instance, same Azure Foundry client), `_build_market_data_block()` helper, and integrated contrarian calls into both `run_symbol_agent()` and `run_position_monitor()` after activity persistence
+- **cosmos_db.py:** Added `update_activity_field()` for patching `contrarian_view` onto existing activity documents
+- **telegram_notifier.py:** Added contrarian one-liner to both sell and roll alert formats (only MODERATE/STRONG strength shown)
+
+**Key design decisions:**
+- Contrarian runs AFTER activity is persisted to CosmosDB (non-blocking to primary flow)
+- Failure in contrarian → log warning + continue (original activity untouched)
+- Uses same model/client as primary agent (no separate Azure connection)
+- Separate agent instance (new ChatAgent object per review)
+- Imports `get_contrarian_instructions` and `CONTRARIAN_OUTPUT_SCHEMA` from Linus's parallel file
+
+## Learnings
+
+### Contrarian as Non-Blocking Post-Write Enrichment
+The contrarian pattern (run after persistence, update via patch) keeps the critical path clean. If the contrarian fails, the activity document already exists intact. The `update_activity_field()` method is a general-purpose patch — useful for any future field enrichment without re-writing the full document.
+
+### Telegram Noise Filtering by Strength
+Only MODERATE and STRONG contrarian challenges appear in Telegram alerts. WEAK challenges are stored in CosmosDB (visible in dashboard) but don't push to Telegram. This reduces notification fatigue while keeping the data available for review.

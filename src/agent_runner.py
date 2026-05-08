@@ -23,6 +23,7 @@ from .options_chain_parser import (
     OPTIONS_CHAIN_SCHEMA_DESCRIPTION,
 )
 from .tv_cache import get_tv_cache as _get_tv_cache
+from .tv_contrarian_instructions import get_contrarian_instructions, CONTRARIAN_OUTPUT_SCHEMA
 
 # Canonical timestamp format — used for ALL activity and alert log entries.
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -296,7 +297,139 @@ class AgentRunner:
             if "risk_flags" in json_data:
                 enrichment["risk_flags"] = json_data["risk_flags"]
         return enrichment
-    
+
+    # ------------------------------------------------------------------
+    # Contrarian Agent — post-decision challenge (Phase 3)
+    # ------------------------------------------------------------------
+
+    async def _run_contrarian_review(
+        self,
+        activity_payload: dict,
+        market_data: str,
+        previous_context: str,
+        agent_type: str,
+    ) -> dict | None:
+        """Run a contrarian agent to challenge the primary decision.
+
+        Creates a separate agent instance with contrarian instructions.
+        Returns the parsed contrarian_view dict, or None on failure.
+        The contrarian MUST NEVER block the primary decision flow.
+        """
+        try:
+            activity_str = activity_payload.get("activity", "SELL")
+            decision_type = activity_str.upper()
+
+            instructions = get_contrarian_instructions(agent_type, decision_type)
+
+            message = f"""Challenge the following trading decision:
+
+=== DECISION TO CHALLENGE ===
+{json.dumps(activity_payload, indent=2, default=str)}
+
+=== MARKET DATA ===
+{market_data}
+
+=== PREVIOUS CONTEXT (decision history) ===
+{previous_context}
+
+=== OUTPUT FORMAT ===
+{CONTRARIAN_OUTPUT_SCHEMA}
+
+Provide your contrarian analysis in the JSON format specified above."""
+
+            agent = ChatAgent(
+                chat_client=self.client,
+                name=f"Contrarian_{agent_type}",
+                instructions=instructions,
+            )
+            result = await agent.run(message)
+            response_text = result.text or str(result)
+
+            logger.info(
+                "Contrarian review completed for %s — response length=%d",
+                activity_payload.get("symbol", "?"), len(response_text),
+            )
+            logger.debug(
+                "Contrarian first 500 chars: %s", response_text[:500],
+            )
+
+            # Parse JSON from response
+            contrarian_data = None
+            # Try fenced JSON blocks first
+            for block in re.findall(r'```json\s*\n(.*?)```', response_text, re.DOTALL):
+                try:
+                    contrarian_data = json.loads(block.strip())
+                    break
+                except json.JSONDecodeError:
+                    continue
+
+            # Fallback: look for raw JSON with challenge_strength
+            if contrarian_data is None:
+                for match in re.finditer(r'\{[^{}]*"challenge_strength"\s*:', response_text):
+                    start = match.start()
+                    depth = 0
+                    for i in range(start, len(response_text)):
+                        if response_text[i] == '{':
+                            depth += 1
+                        elif response_text[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                try:
+                                    contrarian_data = json.loads(response_text[start:i + 1])
+                                except json.JSONDecodeError:
+                                    pass
+                                break
+                    if contrarian_data is not None:
+                        break
+
+            if contrarian_data is None:
+                logger.warning("Contrarian returned no parseable JSON")
+                return None
+
+            # Validate required fields
+            required = {"challenge_strength", "counter_arguments", "net_assessment", "one_liner"}
+            missing = required - set(contrarian_data.keys())
+            if missing:
+                logger.warning("Contrarian JSON missing fields: %s", missing)
+                return None
+
+            # Validate challenge_strength value
+            strength = str(contrarian_data.get("challenge_strength", "")).upper()
+            if strength not in ("WEAK", "MODERATE", "STRONG"):
+                logger.warning("Contrarian invalid challenge_strength: %s", strength)
+                return None
+            contrarian_data["challenge_strength"] = strength
+
+            logger.info(
+                "Contrarian challenge for %s: strength=%s one_liner=%s",
+                activity_payload.get("symbol", "?"),
+                strength,
+                str(contrarian_data.get("one_liner", ""))[:80],
+            )
+            return contrarian_data
+
+        except Exception:
+            logger.warning(
+                "Contrarian review failed for %s — original decision unaffected",
+                activity_payload.get("symbol", "?"),
+                exc_info=True,
+            )
+            return None
+
+    def _build_market_data_block(self, data: dict, symbol: str, exchange: str) -> str:
+        """Build the market data text block for contrarian context."""
+        return f"""--- OVERVIEW PAGE ({exchange}:{symbol}) ---
+{data.get('overview', '')}
+
+--- TECHNICALS PAGE ({exchange}:{symbol}) ---
+{data.get('technicals', '')}
+
+--- FORECAST PAGE ({exchange}:{symbol}) ---
+{data.get('forecast', '')}
+
+--- DIVIDENDS PAGE ({exchange}:{symbol}) ---
+{data.get('dividends', '')}"""
+
     async def run_symbol_agent(
         self,
         name: str,
@@ -455,6 +588,23 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         symbol=symbol, agent_type=agent_type,
                         alert_data=alert_data, is_roll=False,
                     )
+
+                # Contrarian review (post-decision, non-blocking)
+                market_data = self._build_market_data_block(data, symbol, exchange)
+                contrarian_view = await self._run_contrarian_review(
+                    activity_payload=activity_payload,
+                    market_data=market_data,
+                    previous_context=previous_context,
+                    agent_type=agent_type,
+                )
+                if contrarian_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="contrarian_view",
+                        value=contrarian_view,
+                    )
+                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
             else:
                 print(f"Logged activity")
 
@@ -1087,6 +1237,23 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         symbol=symbol, agent_type=agent_type,
                         alert_data=alert_data, is_roll=True,
                     )
+
+                # Contrarian review (post-decision, non-blocking)
+                market_data = self._build_market_data_block(data, symbol, exchange)
+                contrarian_view = await self._run_contrarian_review(
+                    activity_payload=activity_payload,
+                    market_data=market_data,
+                    previous_context=previous_context,
+                    agent_type=agent_type,
+                )
+                if contrarian_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="contrarian_view",
+                        value=contrarian_view,
+                    )
+                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
             else:
                 print(f"Logged activity")
 
