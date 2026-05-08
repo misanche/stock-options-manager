@@ -158,13 +158,11 @@ class TelegramNotifier:
         if risk_rating is not None:
             lines.append(f"Risk: {risk_rating}/10")
 
-        # Contrarian one-liner (only MODERATE or STRONG)
+        # Inline contrarian (MODERATE/STRONG only)
         cv = data.get("contrarian_view")
-        if isinstance(cv, dict):
-            strength = str(cv.get("challenge_strength", "")).upper()
-            one_liner = cv.get("one_liner", "")
-            if strength in ("MODERATE", "STRONG") and one_liner:
-                lines.append(f"⚡ Contrarian [{strength}]: {one_liner}")
+        if cv and cv.get("challenge_strength") in ("MODERATE", "STRONG"):
+            lines.append("")
+            lines.append(f"\u26a1 Contrarian [{cv['challenge_strength']}]: {cv.get('one_liner', '')}")
 
         return "\n".join(lines)
 
@@ -214,13 +212,11 @@ class TelegramNotifier:
         if assignment_risk is not None:
             lines.append(f"Assignment Risk: {str(assignment_risk).capitalize()}")
 
-        # Contrarian one-liner (only MODERATE or STRONG)
+        # Inline contrarian (MODERATE/STRONG only)
         cv = data.get("contrarian_view")
-        if isinstance(cv, dict):
-            strength = str(cv.get("challenge_strength", "")).upper()
-            one_liner = cv.get("one_liner", "")
-            if strength in ("MODERATE", "STRONG") and one_liner:
-                lines.append(f"⚡ Contrarian [{strength}]: {one_liner}")
+        if cv and cv.get("challenge_strength") in ("MODERATE", "STRONG"):
+            lines.append("")
+            lines.append(f"\u26a1 Contrarian [{cv['challenge_strength']}]: {cv.get('one_liner', '')}")
 
         return "\n".join(lines)
 

@@ -618,27 +618,9 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             
             if is_alert:
                 print(f"⚠️ SELL ALERT logged for {full_symbol}")
-                if self.telegram_notifier:
-                    # Build display data for Telegram from the activity doc
-                    alert_data = {
-                        "timestamp": analysis_ts,
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "activity": json_data.get("activity", "SELL") if json_data else "SELL",
-                        "strike": json_data.get("strike") if json_data else None,
-                        "expiration": json_data.get("expiration") if json_data else None,
-                        "underlying_price": json_data.get("underlying_price") if json_data else None,
-                        "confidence": json_data.get("confidence") if json_data else None,
-                        "risk_rating": json_data.get("risk_rating") if json_data else None,
-                        "risk_flags": json_data.get("risk_flags") if json_data else None,
-                        "premium": json_data.get("premium") if json_data else None,
-                    }
-                    self.telegram_notifier.send_alert(
-                        symbol=symbol, agent_type=agent_type,
-                        alert_data=alert_data, is_roll=False,
-                    )
 
-                # Contrarian review (post-decision, non-blocking)
+                # Contrarian review BEFORE Telegram (so we include it in one message)
+                contrarian_view = None
                 market_data = self._build_market_data_block(data, symbol, exchange)
                 contrarian_view = await self._run_contrarian_review(
                     activity_payload=activity_payload,
@@ -654,6 +636,28 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         value=contrarian_view,
                     )
                     print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+
+                if self.telegram_notifier:
+                    # Build display data for Telegram from the activity doc
+                    alert_data = {
+                        "timestamp": analysis_ts,
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "activity": json_data.get("activity", "SELL") if json_data else "SELL",
+                        "strike": json_data.get("strike") if json_data else None,
+                        "expiration": json_data.get("expiration") if json_data else None,
+                        "underlying_price": json_data.get("underlying_price") if json_data else None,
+                        "confidence": json_data.get("confidence") if json_data else None,
+                        "risk_rating": json_data.get("risk_rating") if json_data else None,
+                        "risk_flags": json_data.get("risk_flags") if json_data else None,
+                        "premium": json_data.get("premium") if json_data else None,
+                    }
+                    if contrarian_view is not None:
+                        alert_data["contrarian_view"] = contrarian_view
+                    self.telegram_notifier.send_alert(
+                        symbol=symbol, agent_type=agent_type,
+                        alert_data=alert_data, is_roll=False,
+                    )
             else:
                 # Check for prolonged WAIT pattern (5+ consecutive)
                 if self._detect_prolonged_wait(cosmos, symbol, agent_type):
@@ -1285,6 +1289,25 @@ Output your activity in the required JSON format. Use the timestamp above in you
             
             if is_alert:
                 print(f"⚠️ ROLL ALERT logged for {full_symbol} ${strike} exp {expiration}")
+
+                # Contrarian review BEFORE Telegram (so we include it in one message)
+                contrarian_view = None
+                market_data = self._build_market_data_block(data, symbol, exchange)
+                contrarian_view = await self._run_contrarian_review(
+                    activity_payload=activity_payload,
+                    market_data=market_data,
+                    previous_context=previous_context,
+                    agent_type=agent_type,
+                )
+                if contrarian_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="contrarian_view",
+                        value=contrarian_view,
+                    )
+                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+
                 if self.telegram_notifier:
                     # Extract roll economics for Telegram notification
                     _re = json_data.get("roll_economics") if json_data else None
@@ -1309,27 +1332,12 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     alert_data["activity"] = alert_data["action"]
                     alert_data["strike"] = alert_data.get("new_strike") or alert_data.get("current_strike")
                     alert_data["expiration"] = alert_data.get("new_expiration") or alert_data.get("current_expiration")
+                    if contrarian_view is not None:
+                        alert_data["contrarian_view"] = contrarian_view
                     self.telegram_notifier.send_alert(
                         symbol=symbol, agent_type=agent_type,
                         alert_data=alert_data, is_roll=True,
                     )
-
-                # Contrarian review (post-decision, non-blocking)
-                market_data = self._build_market_data_block(data, symbol, exchange)
-                contrarian_view = await self._run_contrarian_review(
-                    activity_payload=activity_payload,
-                    market_data=market_data,
-                    previous_context=previous_context,
-                    agent_type=agent_type,
-                )
-                if contrarian_view is not None:
-                    cosmos.update_activity_field(
-                        doc_id=dec_doc["id"],
-                        symbol=symbol,
-                        field="contrarian_view",
-                        value=contrarian_view,
-                    )
-                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
             else:
                 # Check for prolonged WAIT pattern (5+ consecutive)
                 if self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id):

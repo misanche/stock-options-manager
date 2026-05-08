@@ -479,7 +479,7 @@ class CosmosDBService:
         for key in ("confidence",):
             if key in alert_data:
                 act_doc[key] = alert_data[key]
-        return self.container.replace_item(act_doc, act_doc)
+        return self.container.replace_item(item=act_doc["id"], body=act_doc)
 
     def update_activity_field(self, doc_id: str, symbol: str,
                               field: str, value) -> bool:
@@ -491,7 +491,7 @@ class CosmosDBService:
         try:
             doc = self.container.read_item(doc_id, partition_key=symbol)
             doc[field] = value
-            self.container.replace_item(doc, doc)
+            self.container.replace_item(item=doc["id"], body=doc)
             return True
         except Exception:
             logger.warning(
@@ -537,7 +537,7 @@ class CosmosDBService:
             act_doc = self.container.read_item(activity_id,
                                                partition_key=symbol)
             act_doc["is_alert"] = True
-            self.container.replace_item(act_doc, act_doc)
+            self.container.replace_item(item=act_doc["id"], body=act_doc)
         except Exception:
             pass
 
