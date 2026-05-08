@@ -165,6 +165,9 @@
             {% if item.data_error %}
             <span class="data-error-indicator" title="Partial data — some TradingView resources returned 403">⚠️</span>
             {% endif %}
+            {% if item.activity and item.activity | upper == 'WAIT' and item.contrarian_view and item.contrarian_view.challenge_strength in ['MODERATE', 'STRONG'] %}
+            <span class="contrarian-indicator contrarian-indicator-{{ item.contrarian_view.challenge_strength | lower }}" title="Contrarian {{ item.contrarian_view.challenge_strength }}: {{ item.contrarian_view.one_liner | default('') }}">🤔</span>
+            {% endif %}
             <span class="badge badge-{{ item.activity | lower if item.activity else 'info' }}">{{ item.activity or "N/A" }}</span>
             <span class="activity-agent">{{ item._agent_label }}</span>
             <strong>{{ item.symbol }}</strong>

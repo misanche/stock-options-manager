@@ -197,6 +197,12 @@ h1, h2, h3, h4, h5, h6 {
 /* Data error indicator in activity feed */
 .data-error-indicator { cursor: help; margin-right: 0.15rem; }
 
+/* Contrarian indicator for WAIT activities with MODERATE/STRONG opinion */
+.contrarian-indicator { cursor: help; margin-right: 0.15rem; font-size: 0.95em; }
+.contrarian-indicator-moderate { filter: saturate(1.2); }
+.contrarian-indicator-strong { animation: contrarian-pulse 2s ease-in-out infinite; }
+@keyframes contrarian-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 /* ── Cards ── */
 .card {
     background: var(--bg-card);
