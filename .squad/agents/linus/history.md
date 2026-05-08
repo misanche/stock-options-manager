@@ -9,6 +9,15 @@
 
 ## Learnings
 
+### Contrarian Agent Instructions (2026-07)
+- Created `src/tv_contrarian_instructions.py` implementing Danny's Opción D architecture (decision `danny-contrarian-agent-architecture.md`).
+- Function `get_contrarian_instructions(agent_type, decision_type)` returns a customized system prompt. Covers 4 agent types × their valid decisions = 16 combinations total.
+- Decision-specific playbooks for: WAIT, ROLL_UP, ROLL_DOWN, ROLL_UP_AND_OUT, ROLL_DOWN_AND_OUT, ROLL_OUT, CLOSE, SELL, NOT_NOW.
+- Anti-noise rules are critical: LLMs will always find something to argue — the prompt explicitly instructs WEAK self-assessment when the original decision is solid, and forbids arguing against risk management decisions or violating the 45 DTE cap.
+- Exported `CONTRARIAN_OUTPUT_SCHEMA` dict for `agent_runner.py` to validate/parse the JSON response.
+- Input validation raises `ValueError` for invalid agent_type/decision_type combos (e.g., open_put + ROLL_UP is rejected since puts don't roll up).
+- Key pattern: Parameterized instruction functions (vs. module-level constants) are the right approach when the same agent serves multiple contexts — keeps one source of truth for shared rules while customizing the playbook section.
+
 ### Near-ATM Stability Buffer (2026-07)
 - Problem: Positions slightly ITM (price barely crosses strike) trigger ROLL, then revert to OTM and get WAIT on the next run — oscillating recommendations.
 - Fix: Added `## NEAR-ATM STABILITY BUFFER` section to both `tv_open_call_assessment_instructions.py` and `tv_open_put_assessment_instructions.py`, placed before ACTIVITY CRITERIA.
