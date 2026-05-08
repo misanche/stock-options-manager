@@ -130,7 +130,7 @@ The Contrarian Agent is a separate LLM instance that challenges every actionable
 | Trigger | Agent Types | Example |
 |---------|------------|---------|
 | Alert decisions (SELL, ROLL_*, CLOSE) | All agent types | A SELL alert always triggers a contrarian review |
-| Prolonged WAIT (5+ consecutive) | All agent types | Symbol stuck in WAIT for 5+ cycles triggers contrarian |
+| Prolonged WAIT (5+ consecutive) | All agent types | Symbol stuck in WAIT for 5+ cycles triggers contrarian (cooldown: 3 WAITs between reviews) |
 | Normal WAIT | — | No contrarian (noise reduction) |
 
 **Pipeline position:** The contrarian runs as Phase 3 — after the primary decision is written to CosmosDB but before the Telegram notification is sent. This allows the contrarian one-liner to be included in a single unified alert message.
@@ -178,7 +178,7 @@ The Contrarian Agent is a separate LLM instance that challenges every actionable
 - Non-blocking: contrarian failures never affect the primary decision flow
 
 **Prolonged WAIT detection:**
-When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), the contrarian is triggered to challenge whether continued waiting is optimal. This catches situations where inaction may be losing opportunities.
+When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), the contrarian is triggered to challenge whether continued waiting is optimal. This catches situations where inaction may be losing opportunities. A cooldown of 3 WAITs (`CONTRARIAN_COOLDOWN = 3`) prevents the contrarian from firing on every subsequent WAIT — after a contrarian review, at least 3 more WAITs must occur before it triggers again.
 
 **Web dashboard integration:**
 - **Activity detail page**: Collapsible "Contrarian Perspective" panel with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) showing counter-arguments and net assessment

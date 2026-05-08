@@ -60,6 +60,7 @@ class AgentRunner:
     """Manages agent execution using Microsoft Agent Framework with TradingView pre-fetch."""
 
     PROLONGED_WAIT_THRESHOLD = 5
+    CONTRARIAN_COOLDOWN = 3  # WAITs between repeated contrarian reviews
     
     def __init__(self, project_endpoint: str, model: str, api_key: str,
                  telegram_notifier=None):
@@ -316,22 +317,26 @@ class AgentRunner:
 
         Returns True if the most recent ``threshold`` activities are all
         non-alert WAIT decisions (indicating the agent has been passive
-        for too long).  Never raises — returns False on any error so the
-        pipeline is never blocked.
+        for too long) AND enough WAITs have passed since the last
+        contrarian review (cooldown).  Never raises — returns False on
+        any error so the pipeline is never blocked.
         """
         if threshold is None:
             threshold = self.PROLONGED_WAIT_THRESHOLD
         try:
+            # Fetch enough activities to check both threshold and cooldown
+            fetch_count = threshold + self.CONTRARIAN_COOLDOWN + 5
             recent = cosmos.get_recent_activities(
                 symbol=symbol,
                 agent_type=agent_type,
-                max_entries=threshold,
+                max_entries=fetch_count,
                 position_id=position_id,
                 include_alerts=True,
             )
             if len(recent) < threshold:
                 return False
-            for act in recent:
+            # Check that the most recent `threshold` activities are all WAITs
+            for act in recent[:threshold]:
                 if act.get("error"):
                     return False
                 if act.get("is_alert", False):
@@ -339,6 +344,17 @@ class AgentRunner:
                 activity = str(act.get("activity", "")).upper()
                 if activity != "WAIT":
                     return False
+
+            # Cooldown: count WAITs since the last contrarian review
+            waits_since_last_contrarian = 0
+            for act in recent:
+                if act.get("contrarian_view"):
+                    break
+                waits_since_last_contrarian += 1
+            # If a previous contrarian exists, enforce cooldown
+            if waits_since_last_contrarian < len(recent) and waits_since_last_contrarian < self.CONTRARIAN_COOLDOWN:
+                return False
+
             return True
         except Exception:
             logger.debug(
