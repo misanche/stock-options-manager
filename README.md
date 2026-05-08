@@ -4,14 +4,15 @@ Periodic options trading analysis using Microsoft Agent Framework with hybrid Tr
 
 ## Architecture
 
-Five specialized agents handle options trading:
+Six specialized agents handle options trading:
 - **Covered Call Agent**: Analyzes stocks for covered call writing opportunities
 - **Cash Secured Put Agent**: Analyzes stocks for cash secured put opportunities
 - **Open Call Monitor**: Monitors open covered call positions for assignment risk
 - **Open Put Monitor**: Monitors open cash-secured put positions for assignment risk
+- **Contrarian Agent (Devil's Advocate)**: Challenges trading decisions by arguing the opposite position, providing counter-arguments to reduce confirmation bias
 - **Report Agent**: Generates comprehensive per-symbol reports combining technical analysis, dividends, options chain, open position risk, and monitoring recommendations
 
-The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
+The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The contrarian agent runs as an optional Phase 3 that challenges actionable decisions before notifications are sent, acting as a built-in devil's advocate. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
 
 Both sell-side agents use the Microsoft Agent Framework (`agent-framework`) with TradingView as the data source. Market data is pre-fetched deterministically — overview, technicals, forecast, and dividends via `requests` + `BeautifulSoup` + TradingView scanner API; options chain via [Playwright](https://playwright.dev/python/) (headless Chromium) — and passed to the LLM for analysis. The LLM never touches the browser or makes HTTP requests directly.
 
@@ -30,9 +31,11 @@ Scheduler (main.py)
   │      2. Pre-fetch TradingView data (overview, technicals, forecast, options chain)
   │      3. LLM analyzes pre-fetched data → structured JSON activity
   │      4. Write activity to CosmosDB; if SELL → also write alert document
+  │      5. Phase 3 (Contrarian): If alert or prolonged WAIT → devil's advocate challenges the decision
+  │      6. Telegram notification includes contrarian one-liner (if MODERATE/STRONG)
   │
   ├─ Query CosmosDB for symbols with watchlist.cash_secured_put = true
-  │    (same loop, different agent instructions)
+  │    (same loop with contrarian phase, different agent instructions)
   │
   ├─ Query CosmosDB for symbols with active call positions
   │    for each position:
@@ -41,9 +44,11 @@ Scheduler (main.py)
   │      3. Phase 1 (Assessment): LLM evaluates assignment risk → WAIT or handoff to Phase 2
   │      4. Phase 2 (Roll Management): Selects specific roll targets from filtered options chain, calculates economics
   │      5. Write activity to CosmosDB; if ROLL/CLOSE → also write alert
+  │      6. Phase 3 (Contrarian): If alert or prolonged WAIT → devil's advocate challenges the decision
+  │      7. Telegram notification includes contrarian one-liner (if MODERATE/STRONG)
   │
   └─ Query CosmosDB for symbols with active put positions
-       (same two-phase pipeline, different agent instructions)
+       (same two-phase pipeline with contrarian phase, different agent instructions)
 ```
 
 **Data gathering:** Python pre-fetches ALL TradingView data deterministically from `tv_data_fetcher.py`. Overview, technicals, forecast, and dividends are fetched via `requests` + `BeautifulSoup` + TradingView scanner API (`scanner.tradingview.com/america/scan2`) — no browser needed. Options chain still uses Playwright (headless Chromium) with `page.on("response")` interception because it requires browser authentication. The LLM never touches the browser or makes HTTP requests. It receives the data as text and only performs analysis. See [Pre-fetch Architecture](#pre-fetch-architecture-tradingview) below.
@@ -115,6 +120,70 @@ Every sell-side agent output (Covered Call and Cash Secured Put) includes a **ri
 | 9–10 | Very high | Definitely WAIT |
 
 The rating appears in JSON output (`risk_rating` integer + `risk_rating_breakdown` object) and in the SUMMARY line (`Risk X/10`). Telegram sell alerts also include `Risk: X/10`.
+
+### Contrarian Agent (Devil's Advocate)
+
+The Contrarian Agent is a separate LLM instance that challenges every actionable trading decision by arguing the opposite position. It acts as a built-in devil's advocate to reduce confirmation bias.
+
+**When it runs:**
+
+| Trigger | Agent Types | Example |
+|---------|------------|---------|
+| Alert decisions (SELL, ROLL_*, CLOSE) | All agent types | A SELL alert always triggers a contrarian review |
+| Prolonged WAIT (5+ consecutive) | All agent types | Symbol stuck in WAIT for 5+ cycles triggers contrarian |
+| Normal WAIT | — | No contrarian (noise reduction) |
+
+**Pipeline position:** The contrarian runs as Phase 3 — after the primary decision is written to CosmosDB but before the Telegram notification is sent. This allows the contrarian one-liner to be included in a single unified alert message.
+
+**How it works:**
+1. A separate ChatAgent instance receives the primary agent's decision, market data, and recent context
+2. It uses decision-specific playbooks to argue the opposite position
+3. Output is a structured JSON with challenge strength, counter-arguments, net assessment, and a one-liner
+4. The `contrarian_view` is stored as a field on the activity document in CosmosDB
+
+**Output schema:**
+```json
+{
+  "challenge_strength": "STRONG | MODERATE | WEAK",
+  "counter_arguments": [
+    {
+      "point": "One-sentence counter-argument",
+      "data_support": "Specific data backing this argument"
+    }
+  ],
+  "net_assessment": "ORIGINAL_HOLDS | RECONSIDER",
+  "one_liner": "Short summary for Telegram notification"
+}
+```
+
+**Challenge playbooks (8 decision types):**
+
+| Decision | Playbook Focus |
+|----------|---------------|
+| WAIT | Argue for action — capital efficiency, theta stagnation, opportunity cost |
+| ROLL_UP | Overbought reversion, buyback cost vs. credit, time decay advantage |
+| ROLL_DOWN | Support bounce, minimal premium delta, oversold signals |
+| ROLL_UP_AND_OUT | Overbought reversion, extending obligation risk, close-and-reenter |
+| ROLL_DOWN_AND_OUT | Support bounce, double penalty (lower strike + longer exposure) |
+| ROLL_OUT | Strike viability, theta already captured, event risk |
+| CLOSE | Remaining theta, premium recapture, technical reversal (exception: risk management triggers → WEAK) |
+| SELL | IV rank reality check, earnings proximity, technical headwinds |
+| NOT_NOW | Argue for action — support/resistance alignment, elevated IV, opportunity cost |
+
+**Agent context awareness:** The contrarian receives context about which type of primary agent made the decision (covered call watchlist, cash-secured put watchlist, open call monitor, open put monitor) and tailors its challenge accordingly.
+
+**Notification integration:**
+- **MODERATE/STRONG** challenges: one-liner appended to the Telegram alert message (single unified message)
+- **WEAK** challenges: stored in CosmosDB only, visible in web dashboard but no Telegram noise
+- Non-blocking: contrarian failures never affect the primary decision flow
+
+**Prolonged WAIT detection:**
+When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), the contrarian is triggered to challenge whether continued waiting is optimal. This catches situations where inaction may be losing opportunities.
+
+**Web dashboard integration:**
+- **Activity detail page**: Collapsible "Contrarian Perspective" panel with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) showing counter-arguments and net assessment
+- **Dashboard & symbol detail**: 🤔 indicator icon on WAIT activities that have MODERATE or STRONG contrarian opinions (STRONG gets a pulse animation)
+- Rolls and sells always have contrarian reviews, so the indicator icon is only needed for WAIT decisions
 
 ### Position Lifecycle
 
@@ -271,7 +340,7 @@ For `SELL` activities, `strike`, `expiration`, premium, `risk_rating`, and `risk
 
 ### Telegram Notifications
 
-When a `SELL`, `ROLL`, or `CLOSE` alert is generated, a Telegram notification is sent if enabled (see [Configuration](#configuration)). The message includes the symbol, action, and key details (strike, expiration, risk flags). Sell alerts include the risk rating (`Risk: X/10`) and premium. Roll alerts include roll economics (buyback cost, new premium, net credit/debit) and assignment risk level. Close alerts show the buyback cost for the position exit.
+When a `SELL`, `ROLL`, or `CLOSE` alert is generated, a Telegram notification is sent if enabled (see [Configuration](#configuration)). The message includes the symbol, action, and key details (strike, expiration, risk flags). Sell alerts include the risk rating (`Risk: X/10`) and premium. Roll alerts include roll economics (buyback cost, new premium, net credit/debit) and assignment risk level. Close alerts show the buyback cost for the position exit. When a contrarian review produces a **MODERATE** or **STRONG** challenge, the contrarian one-liner is appended to the alert message as a unified notification. **WEAK** challenges are omitted from Telegram to reduce noise — they remain accessible in the web dashboard.
 
 ## Dual-Mode Chat Experience
 
@@ -410,6 +479,7 @@ stock-options-manager/
 │   ├── tv_open_call_chat_instructions.py # Chat instructions for open call analysis
 │   ├── tv_open_put_chat_instructions.py  # Chat instructions for open put analysis
 │   ├── tv_report_instructions.py         # Report agent system prompt
+│   ├── tv_contrarian_instructions.py     # Contrarian agent (devil's advocate) — 8 playbooks, 4 agent contexts
 │   └── telegram_notifier.py              # Telegram notification service — sends alerts via bot API
 ├── scripts/
 │   └── provision_cosmosdb.sh             # Azure CosmosDB provisioning via az CLI
@@ -438,10 +508,10 @@ stock-options-manager/
 
 ## Web Dashboard
 
-- **Dashboard** (`/`) — Alerts overview by agent type with rolling time-range counts (today, last 7 days, last 30 days), scheduler status, recent activity feed with alert indicators and clickable links, position summary. Activities can be filtered by **confidence level** (high/medium/low) and **agent type** for granular views.
+- **Dashboard** (`/`) — Alerts overview by agent type with rolling time-range counts (today, last 7 days, last 30 days), scheduler status, recent activity feed with alert indicators and clickable links, position summary. Activities can be filtered by **confidence level** (high/medium/low) and **agent type** for granular views. WAIT activities with MODERATE or STRONG contrarian opinions display a 🤔 indicator icon (STRONG gets a pulse animation).
 - **Alert Details** (`/alerts/{agent}/{symbol}`) — All alerts for a specific symbol, newest first, with activity badges and risk flags.
 - **Alert + Activities** (`/alerts/{agent}/{symbol}/{index}`) — Full alert JSON and backing activities from the same time window.
-- **Symbol Detail** (`/symbols/{symbol}`) — Full detail page for a symbol: expandable positions with source traceability, editable notes field, Close/Roll/Delete actions, activities, alerts, and "Open Position from Alert" / "Roll Position from Alert" buttons on activity detail. Features a **play button** (▶) for running individual symbol analysis on demand. **Generate Report** and **Chat** buttons are aligned right; watchlist toggles are aligned left. Activities support confidence and agent-type filtering.
+- **Symbol Detail** (`/symbols/{symbol}`) — Full detail page for a symbol: expandable positions with source traceability, editable notes field, Close/Roll/Delete actions, activities, alerts, and "Open Position from Alert" / "Roll Position from Alert" buttons on activity detail. Features a **play button** (▶) for running individual symbol analysis on demand. **Generate Report** and **Chat** buttons are aligned right; watchlist toggles are aligned left. Activities support confidence and agent-type filtering. WAIT activities with MODERATE or STRONG contrarian opinions display a 🤔 indicator icon. Activity detail includes a collapsible "Contrarian Perspective" panel with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) showing counter-arguments and net assessment.
 - **Symbol Report** (`/symbols/{symbol}/report`) — Dedicated report display page showing the latest generated report for a symbol (technical analysis, dividends, options chain, risk assessment, and recommendations).
 - **Symbol Chat** (`/symbols/{symbol}/chat`) — Per-symbol chat page with a context selection screen before starting the conversation. Pre-loads TradingView data via the cache layer for faster responses. Supports open call and open put analysis contexts.
 - **Fetch Preview** (`/symbols/{symbol}/fetch-preview`) — Debug page showing raw TradingView data for each resource (overview, technicals, forecast, options chain) with fetch timing and size.
