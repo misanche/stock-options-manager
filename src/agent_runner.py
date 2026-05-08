@@ -368,7 +368,14 @@ class AgentRunner:
             activity_str = activity_payload.get("activity", "SELL")
             decision_type = activity_str.upper()
 
-            instructions = get_contrarian_instructions(agent_type, decision_type)
+            # Normalize monitor agent types to base types for contrarian
+            _AGENT_TYPE_MAP = {
+                "open_call_monitor": "open_call",
+                "open_put_monitor": "open_put",
+            }
+            contrarian_agent_type = _AGENT_TYPE_MAP.get(agent_type, agent_type)
+
+            instructions = get_contrarian_instructions(contrarian_agent_type, decision_type)
 
             message = f"""Challenge the following trading decision:
 
