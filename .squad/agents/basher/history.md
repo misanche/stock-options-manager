@@ -177,3 +177,14 @@ python -m pytest tests/test_anti403.py -v
 - `.squad/orchestration-log/2026-04-06T14-10-rusty-anti403.md` (Rusty's deliverable)
 - `.squad/log/2026-04-06T14-10-anti403-implementation.md` (session summary)
 - `.squad/decisions/decisions.md` → "Anti-403 Implementation (4 Phases)"
+
+### Contrarian Panel UI (2026-07-17)
+- **Files changed:** `web/templates/activity_detail.html`, `web/static/style.css`, `web/static/app.js`
+- **Feature:** Collapsible contrarian perspective panel on activity detail page
+- **Placement:** After activity card, before Raw JSON card
+- **Behavior:** Panel renders only when `activity.contrarian_view` exists in CosmosDB document. WEAK panels auto-collapse on load; MODERATE/STRONG expand by default. Color-coded badges (green/amber/red) match existing design system.
+- **Backend:** No changes needed — `activity_detail_page()` already passes full activity document to template (line 1527 of `web/app.py`)
+- **Jinja2 edge cases tested:** missing `contrarian_view` (hidden), empty `counter_arguments` (list hidden), missing `one_liner` (graceful), lowercase `challenge_strength` input (case-insensitive via `|upper`/`|lower` filters)
+- **CSS:** Uses existing CSS variables (`--bg-card`, `--border`, `--accent-green`, `--accent-orange`, `--accent-red`, `--radius-card`, `--radius-pill`). Contrarian-specific classes follow existing badge/card patterns.
+- **JS:** `toggleContrarian()` function + auto-collapse IIFE for WEAK panels. Added at end of `app.js` alongside existing DOMContentLoaded handlers.
+- **Tests:** 6 Jinja2 rendering tests validated all states (no view, WEAK, MODERATE, STRONG, RECONSIDER, empty args, missing one_liner)

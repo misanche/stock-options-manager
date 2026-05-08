@@ -146,6 +146,46 @@
     </div>
 </div>
 
+<!-- Contrarian perspective panel -->
+{% if activity.contrarian_view %}
+<div class="contrarian-panel contrarian-{{ activity.contrarian_view.challenge_strength|lower }}"
+     id="contrarian-panel">
+    <div class="contrarian-header" onclick="toggleContrarian()">
+        <span class="contrarian-icon">🔍</span>
+        <span class="contrarian-title">Perspectiva Contrarian</span>
+        <span class="contrarian-badge badge-{{ activity.contrarian_view.challenge_strength|lower }}">
+            {% if activity.contrarian_view.challenge_strength|upper == 'WEAK' %}Decision is solid
+            {% elif activity.contrarian_view.challenge_strength|upper == 'MODERATE' %}Points to consider
+            {% elif activity.contrarian_view.challenge_strength|upper == 'STRONG' %}Seriously reconsider
+            {% else %}{{ activity.contrarian_view.challenge_strength }}
+            {% endif %}
+        </span>
+        <span class="contrarian-toggle" id="contrarian-toggle">▼</span>
+    </div>
+    <div class="contrarian-body" id="contrarian-body">
+        {% if activity.contrarian_view.counter_arguments %}
+        <ol class="contrarian-arguments">
+            {% for arg in activity.contrarian_view.counter_arguments %}
+            <li>
+                <strong>{{ arg.point }}</strong>
+                {% if arg.data_support %}
+                <span class="contrarian-data-support">{{ arg.data_support }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+        {% endif %}
+        <div class="contrarian-verdict">
+            {% if activity.contrarian_view.net_assessment|upper == 'RECONSIDER' %}
+            ⚠️ <strong>Reconsider</strong>{% if activity.contrarian_view.one_liner %} — <em>{{ activity.contrarian_view.one_liner }}</em>{% endif %}
+            {% else %}
+            ✅ <strong>Original decision holds</strong>{% if activity.contrarian_view.one_liner %} — <em>{{ activity.contrarian_view.one_liner }}</em>{% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Full activity JSON -->
 <div class="card">
     <details>

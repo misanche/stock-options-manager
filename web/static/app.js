@@ -271,3 +271,25 @@ if (document.getElementById('activity-time-filter')) {
 if (document.getElementById('sym-activity-time-filter')) {
     applyTableFilter('sym-activity-time-filter', '#activities-table', 'sym-activity-agent-filter', 'sym-activity-confidence-filter');
 }
+
+// ── Contrarian panel toggle ──
+function toggleContrarian() {
+    var body = document.getElementById('contrarian-body');
+    var toggle = document.getElementById('contrarian-toggle');
+    if (!body) return;
+    body.classList.toggle('collapsed');
+    if (toggle) {
+        toggle.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+    }
+}
+
+// Auto-collapse WEAK panels on load
+(function() {
+    var panel = document.querySelector('.contrarian-weak');
+    if (panel) {
+        var body = panel.querySelector('.contrarian-body');
+        var toggle = panel.querySelector('.contrarian-toggle');
+        if (body) body.classList.add('collapsed');
+        if (toggle) toggle.textContent = '▶';
+    }
+})();
