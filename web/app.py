@@ -1580,8 +1580,11 @@ async def api_create_activity_from_recommendation(request: Request):
 
         if activity_data.get("confidence"):
             new_activity["confidence"] = activity_data["confidence"]
+        # Use the agent's finding as reason; fall back to the recommendation text
         if activity_data.get("reason"):
             new_activity["reason"] = activity_data["reason"]
+        elif recommendation:
+            new_activity["reason"] = recommendation
         if activity_data.get("iv"):
             new_activity["iv"] = float(activity_data["iv"])
         if activity_data.get("risk_rating") is not None:

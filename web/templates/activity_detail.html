@@ -392,7 +392,17 @@ function openRecommendationModal(sourceAgent) {
     document.getElementById('recPremium').value = activityData.premium || '';
     document.getElementById('recIV').value = activityData.iv || '';
     document.getElementById('recRiskRating').value = activityData.risk_rating || '';
-    document.getElementById('recReason').value = '';
+
+    // Pre-fill reason with the source agent's key finding
+    var defaultReason = '';
+    if (sourceAgent === 'alpha_advisor' && activityData.alpha_view) {
+        var av = activityData.alpha_view;
+        defaultReason = av.one_liner || (av.alternative && av.alternative.action) || '';
+    } else if (sourceAgent === 'supervisor') {
+        var sv = activityData.supervisor_view || activityData.contrarian_view || {};
+        defaultReason = sv.one_liner || sv.net_assessment || '';
+    }
+    document.getElementById('recReason').value = defaultReason;
     document.getElementById('recMsg').style.display = 'none';
     document.getElementById('btnSubmitRec').disabled = false;
     document.getElementById('btnSubmitRec').textContent = 'Create Activity';
