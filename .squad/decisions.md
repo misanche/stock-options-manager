@@ -2184,6 +2184,73 @@ If an agent type has zero recent activity, it won't appear in the dropdown. This
 
 ---
 
+### 25. Mandatory Premium Cross-Verification Step
+
+**Date:** 2026-07-14  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented  
+**Impact:** Agent instructions (7 files)
+
+#### Problem
+
+The CSP watcher agent was reporting premium (bid) from the correct strike but wrong expiration date — specifically the last expiration key in the options chain JSON. The LLM reads a multi-expiration nested dict and silently crosses expiration boundaries when extracting prices.
+
+#### Decision
+
+Add a mandatory "Premium Cross-Verification" step to every agent instruction file that produces a JSON activity block. The step requires the agent to explicitly cite the full chain lookup path (e.g., `puts["20260613"]["95.0"]["bid"] = 3.45`) and verify the expiration key matches the recommended date before writing the JSON output.
+
+#### Scope
+
+- **Watcher agents** (CSP, CC): New numbered step in RESPONSE STRUCTURE before JSON Activity Block
+- **Roll agents** (open call roll, open put roll): New subsection before Final Activity JSON Schema — verifies both buyback (ask) and new position (bid) paths
+- **Chat agents** (call chat, put chat): Lighter-weight verification guidance section
+- **Schema description** (`options_chain_parser.py`): Added COMMON ERROR warning to DATA INTEGRITY section — injected into all agents at runtime
+
+#### Rationale
+
+- Zero runtime cost — this is prompt text only, no code logic changes
+- Forces the LLM to make its lookup explicit, which naturally catches cross-expiration errors
+- The contrarian agent already had a similar check added in a prior fix; this extends the pattern to the primary agents
+- Same structural pattern as the "Never output bare ROLL" fix — making implicit behavior explicit prevents silent errors
+
+#### Files Modified
+
+`options_chain_parser.py`, `tv_cash_secured_put_instructions.py`, `tv_covered_call_instructions.py`, `tv_open_call_roll_instructions.py`, `tv_open_put_roll_instructions.py`, `tv_open_call_chat_instructions.py`, `tv_open_put_chat_instructions.py`
+
+---
+
+### 26. Contrarian Agent Refactored to Quality Auditor
+
+**Date:** 2026-07  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented  
+**Commit:** 305f33b  
+**Impact:** Agent behavior, signal quality
+
+#### What Changed
+
+The contrarian agent (`src/tv_contrarian_instructions.py`) was refactored from a "devil's advocate that always argues the opposite" to a "quality auditor that challenges only when it finds real issues."
+
+#### Why
+
+The adversarial framing caused the LLM to manufacture objections against correct decisions. Real example: flagging >3% monthly CSP premium as "low" — when 3% is outstanding. The instruction "ALWAYS argue the opposite" left no room for the agent to say "this decision is correct."
+
+#### Key Changes
+
+1. **Role/Mission**: Devil's Advocate → Quality Auditor. Agent now audits for data errors, blind spots, and unaddressed risks instead of arguing the opposite.
+2. **Rule #1**: "ALWAYS argue the opposite" → "Challenge ONLY when you find genuine issues."
+3. **Premium benchmarks added**: CSP >1.5%/mo is good, >2% excellent, >3% outstanding. CC >1%/mo good, >2% excellent. Agent must not flag premium above these thresholds.
+4. **WEAK = best outcome**: Explicitly stated that a WEAK result ("analysis is sound, proceed with confidence") is the most valuable outcome, not a failure.
+5. **All playbooks**: Framing changed from adversarial ("argue the opposite") to audit checklist ("check if any of these risk factors were overlooked"). All existing angles preserved — they're good risk checks.
+
+#### Team Impact
+
+- **Rusty (Framework)**: No API changes. `CONTRARIAN_OUTPUT_SCHEMA` structure unchanged. `get_contrarian_instructions()` signature unchanged.
+- **Danny (Architect)**: Philosophy shift aligns with the goal of reducing false-positive alerts. The contrarian phase should now produce higher signal-to-noise.
+- **Expected behavior change**: More WEAK results, fewer manufactured MODERATE/STRONG challenges. RECONSIDER verdicts should only appear for genuine issues.
+
+---
+
 
 ---
 
