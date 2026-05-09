@@ -284,3 +284,45 @@ tradingview:
 **Decision doc:** `.squad/decisions/inbox/danny-monitor-split.md`
 **Status:** Recommended — awaiting user approval
 
+### 2026-07-17: Contrarian / Devil's Advocate Agent Architecture (PROPOSED)
+
+**Context:** User (dsanchor) wants the system to self-debate before presenting final recommendations. Currently dsanchor manually challenges every decision — he wants automation of the second-guessing process.
+
+**Architecture Decision: Pipeline Selectivo + Vista Integrada (Opción D)**
+
+**Key Design Points:**
+- Contrarian runs as Phase 3 of the pipeline, ONLY when `is_alert=true` (SELL, ROLL_*, CLOSE)
+- Output persisted as `contrarian_view` field inside the activity document (no separate doc)
+- Challenge strength rating (STRONG/MODERATE/WEAK) prevents analysis paralysis
+- Binary `net_assessment` (ORIGINAL_HOLDS / RECONSIDER) forces the contrarian to take a position
+- Telegram integration: only shows contrarian line if `challenge_strength >= MODERATE`
+- Zero incremental data cost — reuses market data already in memory
+- On-demand "Challenge" button in dashboard for WAITs (deferred to Phase 2)
+
+**Anti-Noise Mitigations:**
+- Prompt explicitly instructs "if decision is obviously correct, rate WEAK — do NOT manufacture objections"
+- Telegram filter: WEAK challenges not notified
+- Max 1 contrarian per symbol per cycle
+- Dashboard color coding: 🟢 WEAK / 🟡 MODERATE / 🔴 STRONG
+
+**User Preferences (dsanchor):**
+- Wants system to self-debate, not just advise
+- Open on UX — accepted pipeline approach over chat-only
+- Communicates in Spanish — proposal written in Spanish
+- Values concrete proposals with actual file paths and code patterns
+
+**Files Impacted (MVP):**
+- New: `src/tv_contrarian_instructions.py`
+- Modified: `src/agent_runner.py` (new `_run_contrarian_review()`, integration in `run_symbol_agent()` and `run_position_monitor()`)
+- Modified: `src/cosmos_db.py` (new `update_activity_field()` method)
+- Modified: `web/templates/activity_detail.html` (contrarian panel)
+- Modified: `src/telegram_notifier.py` (contrarian line in alerts)
+
+**Team Assignment:**
+- Linus: Contrarian instructions (`tv_contrarian_instructions.py`)
+- Rusty: Pipeline integration (`agent_runner.py`, `cosmos_db.py`)
+- Basher: Frontend + Telegram + tests
+
+**Decision doc:** `.squad/decisions/inbox/danny-contrarian-agent-architecture.md`
+**Status:** Proposed — awaiting user (dsanchor) approval
+
