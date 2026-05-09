@@ -317,6 +317,13 @@
                 <textarea id="recReason" rows="3" placeholder="Why are you applying this recommendation?"></textarea>
             </div>
 
+            <div class="modal-field" id="includeOtherAgentField" style="margin-top:0.5rem; display:none;">
+                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                    <input type="checkbox" id="recIncludeOtherAgent" />
+                    <span id="includeOtherAgentLabel">Include other agent data</span>
+                </label>
+            </div>
+
             <div class="modal-source-info">
                 📎 This activity will be linked to the original (<code>{{ activity.id }}</code>) via
                 <span id="modalSourceLabel">the recommending agent</span>.
@@ -403,6 +410,24 @@ function openRecommendationModal(sourceAgent) {
         defaultReason = sv.one_liner || sv.net_assessment || '';
     }
     document.getElementById('recReason').value = defaultReason;
+
+    // Show "include other agent data" checkbox if the other agent has data
+    var otherField = document.getElementById('includeOtherAgentField');
+    var otherCheckbox = document.getElementById('recIncludeOtherAgent');
+    var otherLabel = document.getElementById('includeOtherAgentLabel');
+    if (sourceAgent === 'supervisor' && activityData.alpha_view) {
+        otherField.style.display = 'block';
+        otherLabel.textContent = 'Include Alpha Advisor data in new activity';
+        otherCheckbox.checked = false;
+    } else if (sourceAgent === 'alpha_advisor' && (activityData.supervisor_view || activityData.contrarian_view)) {
+        otherField.style.display = 'block';
+        otherLabel.textContent = 'Include Supervisor data in new activity';
+        otherCheckbox.checked = false;
+    } else {
+        otherField.style.display = 'none';
+        otherCheckbox.checked = false;
+    }
+
     document.getElementById('recMsg').style.display = 'none';
     document.getElementById('btnSubmitRec').disabled = false;
     document.getElementById('btnSubmitRec').textContent = 'Create Activity';
@@ -444,7 +469,8 @@ async function submitRecommendation(e) {
             reason: document.getElementById('recReason').value || undefined,
             iv: document.getElementById('recIV').value || undefined,
             risk_rating: document.getElementById('recRiskRating').value || undefined,
-        }
+        },
+        include_other_agent: document.getElementById('recIncludeOtherAgent').checked,
     };
 
     try {

@@ -1515,6 +1515,7 @@ async def api_create_activity_from_recommendation(request: Request):
         source_activity_id = body.get("source_activity_id")
         source_agent = body.get("source_agent")  # "supervisor" or "alpha_advisor"
         activity_data = body.get("activity_data", {})
+        include_other_agent = body.get("include_other_agent", False)
 
         if not source_activity_id or not source_agent:
             return JSONResponse(
@@ -1565,11 +1566,17 @@ async def api_create_activity_from_recommendation(request: Request):
                         if k not in exclude_keys}
 
         # Strip the recommending agent's view from the clone
+        # Optionally strip the other agent's view too (unless user checked "include")
         if source_agent == "supervisor":
             new_activity.pop("supervisor_view", None)
             new_activity.pop("contrarian_view", None)
+            if not include_other_agent:
+                new_activity.pop("alpha_view", None)
         elif source_agent == "alpha_advisor":
             new_activity.pop("alpha_view", None)
+            if not include_other_agent:
+                new_activity.pop("supervisor_view", None)
+                new_activity.pop("contrarian_view", None)
 
         # Apply user overrides
         new_activity["activity"] = activity_data["activity"]
