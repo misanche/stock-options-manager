@@ -163,7 +163,7 @@
 <div class="review-panel review-{{ sv.challenge_strength|lower }}"
      id="supervisor-panel">
     <div class="review-header" onclick="togglePanel('supervisor')">
-        <span class="review-icon">🔍</span>
+        <span class="review-icon">🛡️</span>
         <span class="review-title">Supervisor</span>
         <span class="review-badge badge-{{ sv.challenge_strength|lower }}">
             {% if sv.challenge_strength|upper == 'WEAK' %}Decision is solid
@@ -211,7 +211,7 @@
 <div class="review-panel review-alpha-{{ av.opportunity_strength|lower }}"
      id="alpha-panel">
     <div class="review-header" onclick="togglePanel('alpha')">
-        <span class="review-icon">🚀</span>
+        <span class="review-icon">🔍</span>
         <span class="review-title">Alpha Advisor</span>
         <span class="review-badge badge-alpha-{{ av.opportunity_strength|lower }}">
             {% if av.opportunity_strength|upper == 'NONE' %}Conservative is optimal
@@ -243,7 +243,7 @@
             {% if av.opportunity_strength|upper == 'NONE' %}
             ✅ <strong>Conservative choice is already optimal</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
             {% else %}
-            🚀 <strong>Aggressive alternative</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
+            🔍 <strong>Aggressive alternative</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
             {% endif %}
         </div>
         {% if av.opportunity_strength|upper in ('STRONG', 'MODERATE') %}

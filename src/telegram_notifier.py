@@ -159,16 +159,16 @@ class TelegramNotifier:
             lines.append(f"Risk: {risk_rating}/10")
 
         # Inline supervisor (MODERATE/STRONG only)
-        sv = data.get("supervisor_view") or data.get("contrarian_view")
+        sv = data.get("supervisor_view")
         if sv and sv.get("challenge_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\U0001f50d Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
+            lines.append(f"\U0001f6e1 Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
 
         # Inline alpha advisor (MODERATE/STRONG only)
         av = data.get("alpha_view")
         if av and av.get("opportunity_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\U0001f680 Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
+            lines.append(f"\U0001f50d Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
 
         return "\n".join(lines)
 
@@ -219,16 +219,16 @@ class TelegramNotifier:
             lines.append(f"Assignment Risk: {str(assignment_risk).capitalize()}")
 
         # Inline supervisor (MODERATE/STRONG only)
-        sv = data.get("supervisor_view") or data.get("contrarian_view")
+        sv = data.get("supervisor_view")
         if sv and sv.get("challenge_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\U0001f50d Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
+            lines.append(f"\U0001f6e1 Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
 
         # Inline alpha advisor (MODERATE/STRONG only)
         av = data.get("alpha_view")
         if av and av.get("opportunity_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\U0001f680 Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
+            lines.append(f"\U0001f50d Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
 
         return "\n".join(lines)
 
@@ -269,7 +269,7 @@ class TelegramNotifier:
                 counter_args = supervisor_view.get("counter_arguments", [])
 
                 lines.append("")
-                lines.append(f"\U0001f50d Supervisor [{strength}]: {one_liner}")
+                lines.append(f"\U0001f6e1 Supervisor [{strength}]: {one_liner}")
 
                 if counter_args:
                     lines.append("")
@@ -288,7 +288,7 @@ class TelegramNotifier:
 
                 if opp_strength in ("MODERATE", "STRONG"):
                     lines.append("")
-                    lines.append(f"\U0001f680 Alpha [{opp_strength}]: {alpha_liner}")
+                    lines.append(f"\U0001f50d Alpha [{opp_strength}]: {alpha_liner}")
                     if alt.get("action"):
                         lines.append(f"  → {alt['action']}")
                     if alt.get("premium_comparison"):

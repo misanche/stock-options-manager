@@ -433,7 +433,7 @@
                         {% if d.data_error %}
                         <span class="data-error-indicator" title="Partial data — some TradingView resources returned 403">⚠️</span>
                         {% endif %}
-                        {% set sv_sym = d.supervisor_view or d.contrarian_view %}
+                        {% set sv_sym = d.supervisor_view %}
                         {% if d.activity and d.activity | upper == 'WAIT' and sv_sym and sv_sym.challenge_strength in ['MODERATE', 'STRONG'] %}
                         <span class="review-indicator review-indicator-{{ sv_sym.challenge_strength | lower }}" title="Supervisor {{ sv_sym.challenge_strength }}: {{ sv_sym.one_liner | default('') }}">🤔</span>
                         {% endif %}

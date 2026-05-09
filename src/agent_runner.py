@@ -622,7 +622,7 @@ class AgentRunner:
             # (check both new field name and legacy field for backward compat)
             waits_since_last_review = 0
             for act in recent:
-                if act.get("supervisor_view") or act.get("contrarian_view"):
+                if act.get("supervisor_view"):
                     break
                 waits_since_last_review += 1
             # If a previous review exists, enforce cooldown
@@ -1053,11 +1053,13 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                 timestamp=analysis_ts,
             )
             
+            # ── Supervisor always runs; Alpha only on alerts / prolonged waits ──
+            market_data = self._build_market_data_block(data, symbol, exchange)
+            prolonged_wait = False
+
             if is_alert:
                 print(f"⚠️ SELL ALERT logged for {full_symbol}")
-
-                # Supervisor + Alpha reviews BEFORE Telegram (include in one message)
-                market_data = self._build_market_data_block(data, symbol, exchange)
+                # Both supervisor + alpha run in parallel
                 supervisor_view, alpha_view = await asyncio.gather(
                     self._run_supervisor_review(
                         activity_payload=activity_payload,
@@ -1072,51 +1074,11 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         agent_type=agent_type,
                     ),
                 )
-                if supervisor_view is not None:
-                    cosmos.update_activity_field(
-                        doc_id=dec_doc["id"],
-                        symbol=symbol,
-                        field="supervisor_view",
-                        value=supervisor_view,
-                    )
-                    print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
-                if alpha_view is not None:
-                    cosmos.update_activity_field(
-                        doc_id=dec_doc["id"],
-                        symbol=symbol,
-                        field="alpha_view",
-                        value=alpha_view,
-                    )
-                    print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
-
-                if self.telegram_notifier:
-                    # Build display data for Telegram from the activity doc
-                    alert_data = {
-                        "timestamp": analysis_ts,
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "activity": json_data.get("activity", "SELL") if json_data else "SELL",
-                        "strike": json_data.get("strike") if json_data else None,
-                        "expiration": json_data.get("expiration") if json_data else None,
-                        "underlying_price": json_data.get("underlying_price") if json_data else None,
-                        "confidence": json_data.get("confidence") if json_data else None,
-                        "risk_rating": json_data.get("risk_rating") if json_data else None,
-                        "risk_flags": json_data.get("risk_flags") if json_data else None,
-                        "premium": json_data.get("premium") if json_data else None,
-                    }
-                    if supervisor_view is not None:
-                        alert_data["supervisor_view"] = supervisor_view
-                    if alpha_view is not None:
-                        alert_data["alpha_view"] = alpha_view
-                    self.telegram_notifier.send_alert(
-                        symbol=symbol, agent_type=agent_type,
-                        alert_data=alert_data, is_roll=False,
-                    )
             else:
-                # Check for prolonged WAIT pattern (5+ consecutive)
-                if self._detect_prolonged_wait(cosmos, symbol, agent_type):
+                prolonged_wait = self._detect_prolonged_wait(cosmos, symbol, agent_type)
+                if prolonged_wait:
                     print(f"⏳ Prolonged WAIT detected for {full_symbol} — triggering supervisor + alpha review")
-                    market_data = self._build_market_data_block(data, symbol, exchange)
+                    # Both supervisor + alpha run in parallel
                     supervisor_view, alpha_view = await asyncio.gather(
                         self._run_supervisor_review(
                             activity_payload=activity_payload,
@@ -1131,38 +1093,73 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                             agent_type=agent_type,
                         ),
                     )
-                    if supervisor_view is not None:
-                        cosmos.update_activity_field(
-                            doc_id=dec_doc["id"],
-                            symbol=symbol,
-                            field="supervisor_view",
-                            value=supervisor_view,
-                        )
-                        print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
-                    if alpha_view is not None:
-                        cosmos.update_activity_field(
-                            doc_id=dec_doc["id"],
-                            symbol=symbol,
-                            field="alpha_view",
-                            value=alpha_view,
-                        )
-                        print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
-                    if self.telegram_notifier:
-                        # Send prolonged WAIT alert if either review has findings
-                        has_supervisor_finding = (supervisor_view is not None and
-                                                  supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
-                        has_alpha_finding = (alpha_view is not None and
-                                            alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
-                        if has_supervisor_finding or has_alpha_finding:
-                            self.telegram_notifier.send_prolonged_wait_alert(
-                                symbol=symbol,
-                                agent_type=agent_type,
-                                supervisor_view=supervisor_view,
-                                alpha_view=alpha_view,
-                                consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
-                            )
                 else:
+                    # Supervisor runs alone (unconditional)
+                    supervisor_view = await self._run_supervisor_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    )
+                    alpha_view = None
                     print(f"Logged activity")
+
+            # Persist supervisor result (always)
+            if supervisor_view is not None:
+                cosmos.update_activity_field(
+                    doc_id=dec_doc["id"],
+                    symbol=symbol,
+                    field="supervisor_view",
+                    value=supervisor_view,
+                )
+                print(f"🛡️ Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+
+            # Persist alpha result (conditional)
+            if alpha_view is not None:
+                cosmos.update_activity_field(
+                    doc_id=dec_doc["id"],
+                    symbol=symbol,
+                    field="alpha_view",
+                    value=alpha_view,
+                )
+                print(f"🔍 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
+
+            # Telegram notifications
+            if is_alert and self.telegram_notifier:
+                alert_data = {
+                    "timestamp": analysis_ts,
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "activity": json_data.get("activity", "SELL") if json_data else "SELL",
+                    "strike": json_data.get("strike") if json_data else None,
+                    "expiration": json_data.get("expiration") if json_data else None,
+                    "underlying_price": json_data.get("underlying_price") if json_data else None,
+                    "confidence": json_data.get("confidence") if json_data else None,
+                    "risk_rating": json_data.get("risk_rating") if json_data else None,
+                    "risk_flags": json_data.get("risk_flags") if json_data else None,
+                    "premium": json_data.get("premium") if json_data else None,
+                }
+                if supervisor_view is not None:
+                    alert_data["supervisor_view"] = supervisor_view
+                if alpha_view is not None:
+                    alert_data["alpha_view"] = alpha_view
+                self.telegram_notifier.send_alert(
+                    symbol=symbol, agent_type=agent_type,
+                    alert_data=alert_data, is_roll=False,
+                )
+            elif prolonged_wait and self.telegram_notifier:
+                has_supervisor_finding = (supervisor_view is not None and
+                                          supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
+                has_alpha_finding = (alpha_view is not None and
+                                    alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
+                if has_supervisor_finding or has_alpha_finding:
+                    self.telegram_notifier.send_prolonged_wait_alert(
+                        symbol=symbol,
+                        agent_type=agent_type,
+                        supervisor_view=supervisor_view,
+                        alpha_view=alpha_view,
+                        consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                    )
 
         except Exception as e:
             logger.error(
@@ -1772,8 +1769,9 @@ Output your activity in the required JSON format. Use the timestamp above in you
             if is_alert:
                 print(f"⚠️ ROLL ALERT logged for {full_symbol} ${strike} exp {expiration}")
 
-                # Supervisor + Alpha reviews BEFORE Telegram (include in one message)
+                # ── Supervisor always runs; Alpha only on alerts / prolonged waits ──
                 market_data = self._build_market_data_block(data, symbol, exchange)
+                # Both supervisor + alpha run in parallel
                 supervisor_view, alpha_view = await asyncio.gather(
                     self._run_supervisor_review(
                         activity_payload=activity_payload,
@@ -1788,6 +1786,8 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         agent_type=agent_type,
                     ),
                 )
+
+                # Persist supervisor result (always)
                 if supervisor_view is not None:
                     cosmos.update_activity_field(
                         doc_id=dec_doc["id"],
@@ -1795,7 +1795,9 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         field="supervisor_view",
                         value=supervisor_view,
                     )
-                    print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+                    print(f"🛡️ Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+
+                # Persist alpha result (conditional)
                 if alpha_view is not None:
                     cosmos.update_activity_field(
                         doc_id=dec_doc["id"],
@@ -1803,7 +1805,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         field="alpha_view",
                         value=alpha_view,
                     )
-                    print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
+                    print(f"🔍 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
 
                 if self.telegram_notifier:
                     # Extract roll economics for Telegram notification
@@ -1838,10 +1840,13 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         alert_data=alert_data, is_roll=True,
                     )
             else:
-                # Check for prolonged WAIT pattern (5+ consecutive)
-                if self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id):
+                # ── Supervisor always runs; Alpha only on prolonged waits ──
+                market_data = self._build_market_data_block(data, symbol, exchange)
+                prolonged_wait = self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id)
+
+                if prolonged_wait:
                     print(f"⏳ Prolonged WAIT detected for {full_symbol} ${strike} — triggering supervisor + alpha review")
-                    market_data = self._build_market_data_block(data, symbol, exchange)
+                    # Both supervisor + alpha run in parallel
                     supervisor_view, alpha_view = await asyncio.gather(
                         self._run_supervisor_review(
                             activity_payload=activity_payload,
@@ -1856,37 +1861,50 @@ Output your activity in the required JSON format. Use the timestamp above in you
                             agent_type=agent_type,
                         ),
                     )
-                    if supervisor_view is not None:
-                        cosmos.update_activity_field(
-                            doc_id=dec_doc["id"],
-                            symbol=symbol,
-                            field="supervisor_view",
-                            value=supervisor_view,
-                        )
-                        print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
-                    if alpha_view is not None:
-                        cosmos.update_activity_field(
-                            doc_id=dec_doc["id"],
-                            symbol=symbol,
-                            field="alpha_view",
-                            value=alpha_view,
-                        )
-                        print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
-                    if self.telegram_notifier:
-                        has_supervisor_finding = (supervisor_view is not None and
-                                                  supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
-                        has_alpha_finding = (alpha_view is not None and
-                                            alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
-                        if has_supervisor_finding or has_alpha_finding:
-                            self.telegram_notifier.send_prolonged_wait_alert(
-                                symbol=symbol,
-                                agent_type=agent_type,
-                                supervisor_view=supervisor_view,
-                                alpha_view=alpha_view,
-                                consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
-                            )
                 else:
+                    # Supervisor runs alone (unconditional)
+                    supervisor_view = await self._run_supervisor_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    )
+                    alpha_view = None
                     print(f"Logged activity")
+
+                # Persist supervisor result (always)
+                if supervisor_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="supervisor_view",
+                        value=supervisor_view,
+                    )
+                    print(f"🛡️ Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+
+                # Persist alpha result (conditional)
+                if alpha_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="alpha_view",
+                        value=alpha_view,
+                    )
+                    print(f"🔍 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
+
+                if prolonged_wait and self.telegram_notifier:
+                    has_supervisor_finding = (supervisor_view is not None and
+                                              supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
+                    has_alpha_finding = (alpha_view is not None and
+                                        alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
+                    if has_supervisor_finding or has_alpha_finding:
+                        self.telegram_notifier.send_prolonged_wait_alert(
+                            symbol=symbol,
+                            agent_type=agent_type,
+                            supervisor_view=supervisor_view,
+                            alpha_view=alpha_view,
+                            consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                        )
 
         except Exception as e:
             logger.error(
