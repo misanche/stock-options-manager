@@ -249,6 +249,278 @@ class AgentRunner:
         reason = response_text[:100].replace('\n', ' ').strip()
         return f"{ticker} | ACTIVITY: {activity} | Reason: {reason}", None
 
+    # ------------------------------------------------------------------
+    # Premium validation against actual chain data
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_premium_against_chain(
+        json_data: Optional[Dict],
+        raw_chain: str,
+        symbol: str,
+        agent_type: str,
+    ) -> Optional[Dict]:
+        """Cross-check the agent's reported premium against the actual chain data.
+
+        If the agent reported a strike + expiration + premium, look up the actual
+        bid in the parsed chain. If they don't match, correct the premium and
+        log a warning. Returns the corrected json_data (or original if valid).
+        """
+        if json_data is None:
+            return json_data
+
+        try:
+            activity = str(json_data.get("activity", "")).upper().strip()
+
+            # Determine if this is a roll action
+            is_roll = activity in VALID_ROLL_ACTIONS
+
+            # For watchlist agents: only validate SELL activities
+            if not is_roll and activity != "SELL":
+                return json_data
+
+            # Determine bucket key based on agent type
+            _put_types = {"cash_secured_put", "open_put", "open_put_monitor"}
+            _call_types = {"covered_call", "open_call", "open_call_monitor"}
+            if agent_type in _put_types:
+                bucket_key = "puts"
+            elif agent_type in _call_types:
+                bucket_key = "calls"
+            else:
+                logger.debug(
+                    "Premium validation: unknown agent_type '%s' for %s — skipping",
+                    agent_type, symbol,
+                )
+                return json_data
+
+            structured = parse_options_chain(raw_chain, symbol)
+            bucket = structured.get(bucket_key, {})
+            if not bucket:
+                logger.debug(
+                    "Premium validation: no %s data in chain for %s — skipping",
+                    bucket_key, symbol,
+                )
+                return json_data
+
+            # --- Validate primary premium (SELL or new leg of ROLL) ---
+            if is_roll:
+                strike_val = json_data.get("new_strike")
+                exp_val = json_data.get("new_expiration")
+                premium_val = json_data.get("new_premium")
+                # Also check inside roll_economics
+                re_block = json_data.get("roll_economics")
+                if isinstance(re_block, dict):
+                    if premium_val is None:
+                        premium_val = re_block.get("new_premium")
+            else:
+                strike_val = json_data.get("strike")
+                exp_val = json_data.get("expiration")
+                premium_val = json_data.get("premium")
+
+            if strike_val is not None and exp_val is not None and premium_val is not None:
+                json_data = AgentRunner._validate_single_premium(
+                    json_data, bucket, bucket_key,
+                    strike_val, exp_val, premium_val,
+                    symbol, is_roll=is_roll, field_prefix="new_" if is_roll else "",
+                )
+
+            # --- For rolls, also validate buyback cost (ask of current contract) ---
+            if is_roll:
+                re_block = json_data.get("roll_economics")
+                if isinstance(re_block, dict):
+                    bb_cost = re_block.get("buyback_cost")
+                    cur_strike = json_data.get("current_strike")
+                    cur_exp = json_data.get("current_expiration")
+                    if bb_cost is not None and cur_strike is not None and cur_exp is not None:
+                        json_data = AgentRunner._validate_buyback_cost(
+                            json_data, bucket, bucket_key,
+                            cur_strike, cur_exp, bb_cost, symbol,
+                        )
+
+        except Exception:
+            logger.debug(
+                "Premium validation error for %s — skipping:\n%s",
+                symbol, traceback.format_exc(),
+            )
+
+        return json_data
+
+    @staticmethod
+    def _validate_single_premium(
+        json_data: Dict,
+        bucket: Dict,
+        bucket_key: str,
+        strike_val,
+        exp_val,
+        premium_val,
+        symbol: str,
+        is_roll: bool = False,
+        field_prefix: str = "",
+    ) -> Dict:
+        """Validate a single premium value against chain data."""
+        exp_key = str(exp_val).replace("-", "")
+        exp_data = bucket.get(exp_key)
+        if exp_data is None:
+            logger.warning(
+                "Premium validation: expiration %s not found in %s chain for %s — cannot verify",
+                exp_key, bucket_key, symbol,
+            )
+            return json_data
+
+        # Try multiple strike key formats
+        strike_float = float(strike_val)
+        strike_keys = [
+            str(strike_float),
+            f"{strike_float:.1f}",
+            f"{strike_float:.2f}",
+        ]
+        contract = None
+        matched_key = None
+        for sk in strike_keys:
+            if sk in exp_data:
+                contract = exp_data[sk]
+                matched_key = sk
+                break
+
+        if contract is None:
+            logger.warning(
+                "Premium validation: strike %s not found in %s[%s] for %s — cannot verify",
+                strike_val, bucket_key, exp_key, symbol,
+            )
+            return json_data
+
+        actual_bid = contract.get("bid")
+        if actual_bid is None:
+            return json_data
+
+        try:
+            reported = float(premium_val)
+            actual = float(actual_bid)
+        except (TypeError, ValueError):
+            return json_data
+
+        if abs(reported - actual) <= 0.02:
+            logger.debug(
+                "Premium validation OK for %s: %s[%s][%s] bid=$%.2f matches reported $%.2f",
+                symbol, bucket_key, exp_key, matched_key, actual, reported,
+            )
+            return json_data
+
+        # Mismatch — correct it
+        logger.warning(
+            "Premium mismatch for %s: agent reported $%.2f but chain shows $%.2f "
+            "for %s['%s']['%s']. Correcting.",
+            symbol, reported, actual, bucket_key, exp_key, matched_key,
+        )
+
+        if is_roll:
+            json_data["new_premium"] = actual
+            re_block = json_data.get("roll_economics")
+            if isinstance(re_block, dict):
+                re_block["new_premium"] = actual
+                # Recalculate net credit if buyback_cost exists
+                bb = re_block.get("buyback_cost")
+                if bb is not None:
+                    try:
+                        re_block["net_credit"] = round(actual - float(bb), 2)
+                    except (TypeError, ValueError):
+                        pass
+        else:
+            json_data["premium"] = actual
+            # Recalculate premium_pct
+            try:
+                if bucket_key == "puts":
+                    json_data["premium_pct"] = round(
+                        (actual / strike_float) * 100, 2
+                    )
+                else:
+                    underlying = json_data.get("underlying_price")
+                    if underlying is not None:
+                        json_data["premium_pct"] = round(
+                            (actual / float(underlying)) * 100, 2
+                        )
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+
+        json_data["premium_corrected"] = True
+
+        # Also correct delta if chain has a different value
+        chain_delta = contract.get("delta")
+        if chain_delta is not None:
+            reported_delta = json_data.get("delta")
+            if reported_delta is not None:
+                try:
+                    if abs(float(reported_delta) - float(chain_delta)) > 0.01:
+                        logger.warning(
+                            "Delta mismatch for %s: agent reported %s but chain shows %s. Correcting.",
+                            symbol, reported_delta, chain_delta,
+                        )
+                        json_data["delta"] = float(chain_delta)
+                except (TypeError, ValueError):
+                    pass
+
+        return json_data
+
+    @staticmethod
+    def _validate_buyback_cost(
+        json_data: Dict,
+        bucket: Dict,
+        bucket_key: str,
+        cur_strike,
+        cur_exp,
+        buyback_cost,
+        symbol: str,
+    ) -> Dict:
+        """Validate buyback cost (ask price of current contract) against chain."""
+        exp_key = str(cur_exp).replace("-", "")
+        exp_data = bucket.get(exp_key)
+        if exp_data is None:
+            return json_data
+
+        strike_float = float(cur_strike)
+        strike_keys = [str(strike_float), f"{strike_float:.1f}", f"{strike_float:.2f}"]
+        contract = None
+        for sk in strike_keys:
+            if sk in exp_data:
+                contract = exp_data[sk]
+                break
+
+        if contract is None:
+            return json_data
+
+        actual_ask = contract.get("ask")
+        if actual_ask is None:
+            return json_data
+
+        try:
+            reported = float(buyback_cost)
+            actual = float(actual_ask)
+        except (TypeError, ValueError):
+            return json_data
+
+        if abs(reported - actual) <= 0.02:
+            return json_data
+
+        logger.warning(
+            "Buyback cost mismatch for %s: agent reported $%.2f but chain shows ask $%.2f "
+            "for %s['%s']. Correcting.",
+            symbol, reported, actual, bucket_key, exp_key,
+        )
+
+        re_block = json_data.get("roll_economics")
+        if isinstance(re_block, dict):
+            re_block["buyback_cost"] = actual
+            # Recalculate net credit
+            new_prem = re_block.get("new_premium")
+            if new_prem is not None:
+                try:
+                    re_block["net_credit"] = round(float(new_prem) - actual, 2)
+                except (TypeError, ValueError):
+                    pass
+        json_data["premium_corrected"] = True
+
+        return json_data
+
     # Activities that are NOT alerts (non-actionable states)
     _NON_ALERT_ACTIVITIES = frozenset({
         "WAIT", "HOLD", "DO_NOTHING", "DOING_NOTHING", "SKIPPED",
@@ -604,6 +876,12 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
 
             # Parse activity from agent output
             activity_line, json_data = self._extract_activity_line(full_symbol, response_text)
+
+            # Validate premium against actual chain data
+            if json_data is not None:
+                json_data = self._validate_premium_against_chain(
+                    json_data, data.get('options_chain', ''), symbol, agent_type,
+                )
 
             # Build activity payload
             activity_payload: Dict = {}
@@ -1232,6 +1510,12 @@ Output your activity in the required JSON format. Use the timestamp above in you
             else:
                 # Phase 1 returned WAIT — use directly
                 json_data = activity_json
+
+            # ── Validate premiums against actual chain data ────────────
+            if json_data is not None:
+                json_data = self._validate_premium_against_chain(
+                    json_data, data.get('options_chain', ''), symbol, agent_type,
+                )
 
             # ── Final safety net: no ROLL without targets ──────────────
             if json_data is not None:
