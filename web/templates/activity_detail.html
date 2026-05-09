@@ -186,6 +186,12 @@
 </div>
 {% endif %}
 
+<!-- Delete activity -->
+<div style="margin:1.5rem 0; display:flex; align-items:center; gap:1rem;">
+    <button class="btn btn-danger" id="btnDeleteActivity">Delete Activity</button>
+    <span id="deleteMsg" style="display:none; font-size:0.9rem;"></span>
+</div>
+
 <!-- Full activity JSON -->
 <div class="card">
     <details>
@@ -196,6 +202,40 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function() {
+    var btnDel = document.getElementById('btnDeleteActivity');
+    var delMsg = document.getElementById('deleteMsg');
+    btnDel.addEventListener('click', async function() {
+        if (!confirm('Are you sure you want to permanently delete this activity?')) return;
+        btnDel.disabled = true;
+        btnDel.textContent = 'Deleting…';
+        delMsg.style.display = 'none';
+        try {
+            var res = await fetch('/api/activities/{{ activity.id }}', { method: 'DELETE' });
+            var data = await res.json();
+            if (!res.ok) {
+                delMsg.style.display = 'inline';
+                delMsg.style.color = '#e23b4a';
+                delMsg.textContent = data.error || 'Failed to delete activity.';
+                btnDel.disabled = false;
+                btnDel.textContent = 'Delete Activity';
+            } else {
+                delMsg.style.display = 'inline';
+                delMsg.style.color = '#00a87e';
+                delMsg.textContent = '✓ Deleted. Redirecting…';
+                setTimeout(function() { window.location.href = '/symbols/{{ symbol }}'; }, 1000);
+            }
+        } catch(e) {
+            delMsg.style.display = 'inline';
+            delMsg.style.color = '#e23b4a';
+            delMsg.textContent = 'Network error: ' + e.message;
+            btnDel.disabled = false;
+            btnDel.textContent = 'Delete Activity';
+        }
+    });
+})();
+</script>
 {% if is_alert %}
 <script>
 (function() {

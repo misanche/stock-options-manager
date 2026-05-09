@@ -600,6 +600,10 @@ class CosmosDBService:
             partition_key=symbol,
         ))
 
+    def delete_activity(self, activity_id: str, symbol: str) -> None:
+        """Delete a single activity document by ID."""
+        self.container.delete_item(item=activity_id, partition_key=symbol)
+
     # ── Single-Document Lookups ────────────────────────────────────────
 
     def get_activity_by_id(self, activity_id: str) -> dict | None:

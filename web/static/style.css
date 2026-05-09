@@ -484,6 +484,9 @@ textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 .btn-primary { background: var(--accent-blue); color: #fff; }
 .btn-primary:hover { background: #3d43c9; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: var(--accent-red); color: #fff; }
+.btn-danger:hover { background: #c4283a; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .alert {
     padding: 0.75rem 1rem;

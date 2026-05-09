@@ -1498,6 +1498,27 @@ async def cache_clear(request: Request):
     return JSONResponse({"cleared": "all"})
 
 # ===========================================================================
+# REST API — Activity Delete
+# ===========================================================================
+
+@app.delete("/api/activities/{activity_id}")
+async def api_delete_activity(request: Request, activity_id: str):
+    try:
+        cosmos = _get_cosmos(request)
+        activity = cosmos.get_activity_by_id(activity_id)
+        if not activity:
+            return JSONResponse({"error": "Activity not found"},
+                                status_code=404)
+        symbol = activity["symbol"]
+        cosmos.delete_activity(activity_id, symbol)
+        return JSONResponse({"ok": True})
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ===========================================================================
 # Page Routes — Activity Detail
 # ===========================================================================
 
