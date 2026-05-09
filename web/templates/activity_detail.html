@@ -159,7 +159,7 @@
 
 <!-- Supervisor perspective panel (check both new and legacy field names) -->
 {% set sv = activity.supervisor_view %}
-{% if sv %}
+{% if sv and sv.challenge_strength|upper in ('MODERATE', 'STRONG') %}
 <div class="review-panel review-{{ sv.challenge_strength|lower }}"
      id="supervisor-panel">
     <div class="review-header" onclick="togglePanel('supervisor')">
