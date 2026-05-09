@@ -1555,7 +1555,7 @@ async def api_create_activity_from_recommendation(request: Request):
                               or av.get("one_liner", ""))
         elif source_agent == "supervisor":
             sv = (source_activity.get("supervisor_view")
-                  or source_activity.get("contrarian_view") or {})
+                  or {})
             recommendation = sv.get("one_liner", "")
 
         # Clone the source activity, then overlay user edits
@@ -1569,14 +1569,12 @@ async def api_create_activity_from_recommendation(request: Request):
         # Optionally strip the other agent's view too (unless user checked "include")
         if source_agent == "supervisor":
             new_activity.pop("supervisor_view", None)
-            new_activity.pop("contrarian_view", None)
             if not include_other_agent:
                 new_activity.pop("alpha_view", None)
         elif source_agent == "alpha_advisor":
             new_activity.pop("alpha_view", None)
             if not include_other_agent:
                 new_activity.pop("supervisor_view", None)
-                new_activity.pop("contrarian_view", None)
 
         # Apply user overrides
         new_activity["activity"] = activity_data["activity"]

@@ -158,7 +158,7 @@
 </div>
 
 <!-- Supervisor perspective panel (check both new and legacy field names) -->
-{% set sv = activity.supervisor_view or activity.contrarian_view %}
+{% set sv = activity.supervisor_view %}
 {% if sv %}
 <div class="review-panel review-{{ sv.challenge_strength|lower }}"
      id="supervisor-panel">
@@ -376,7 +376,7 @@ function openRecommendationModal(sourceAgent) {
         if (av.alternative && av.alternative.premium_comparison) recText += '\n💰 ' + av.alternative.premium_comparison;
         if (av.alternative && av.alternative.rationale) recText += '\n📊 ' + av.alternative.rationale;
     } else if (sourceAgent === 'supervisor') {
-        var sv = activityData.supervisor_view || activityData.contrarian_view || {};
+        var sv = activityData.supervisor_view || {};
         if (sv.one_liner) recText += '⚠️ ' + sv.one_liner;
         if (sv.counter_arguments) {
             sv.counter_arguments.forEach(function(arg) {
@@ -406,7 +406,7 @@ function openRecommendationModal(sourceAgent) {
         var av = activityData.alpha_view;
         defaultReason = av.one_liner || (av.alternative && av.alternative.action) || '';
     } else if (sourceAgent === 'supervisor') {
-        var sv = activityData.supervisor_view || activityData.contrarian_view || {};
+        var sv = activityData.supervisor_view || {};
         defaultReason = sv.one_liner || sv.net_assessment || '';
     }
     document.getElementById('recReason').value = defaultReason;
@@ -419,7 +419,7 @@ function openRecommendationModal(sourceAgent) {
         otherField.style.display = 'block';
         otherLabel.textContent = 'Include Alpha Advisor data in new activity';
         otherCheckbox.checked = false;
-    } else if (sourceAgent === 'alpha_advisor' && (activityData.supervisor_view || activityData.contrarian_view)) {
+    } else if (sourceAgent === 'alpha_advisor' && activityData.supervisor_view) {
         otherField.style.display = 'block';
         otherLabel.textContent = 'Include Supervisor data in new activity';
         otherCheckbox.checked = false;
