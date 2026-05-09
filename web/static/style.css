@@ -197,11 +197,11 @@ h1, h2, h3, h4, h5, h6 {
 /* Data error indicator in activity feed */
 .data-error-indicator { cursor: help; margin-right: 0.15rem; }
 
-/* Contrarian indicator for WAIT activities with MODERATE/STRONG opinion */
-.contrarian-indicator { cursor: help; margin-right: 0.15rem; font-size: 0.95em; }
-.contrarian-indicator-moderate { filter: saturate(1.2); }
-.contrarian-indicator-strong { animation: contrarian-pulse 2s ease-in-out infinite; }
-@keyframes contrarian-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* Review indicator for WAIT activities with MODERATE/STRONG opinion */
+.review-indicator { cursor: help; margin-right: 0.15rem; font-size: 0.95em; }
+.review-indicator-moderate { filter: saturate(1.2); }
+.review-indicator-strong { animation: review-pulse 2s ease-in-out infinite; }
+@keyframes review-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* ── Cards ── */
 .card {
@@ -809,8 +809,8 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     display: block;
 }
 
-/* ── Contrarian Perspective Panel ── */
-.contrarian-panel {
+/* ── Review Panels (Supervisor + Alpha Advisor) ── */
+.review-panel {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-left: 4px solid var(--text-muted);
@@ -818,11 +818,14 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     margin-bottom: 1.5rem;
     overflow: hidden;
 }
-.contrarian-weak { border-left-color: var(--accent-green); }
-.contrarian-moderate { border-left-color: var(--accent-orange); }
-.contrarian-strong { border-left-color: var(--accent-red); }
+.review-weak { border-left-color: var(--accent-green); }
+.review-moderate { border-left-color: var(--accent-orange); }
+.review-strong { border-left-color: var(--accent-red); }
+.review-alpha-none { border-left-color: var(--accent-green); }
+.review-alpha-moderate { border-left-color: var(--accent-blue, #2196f3); }
+.review-alpha-strong { border-left-color: var(--accent-blue, #2196f3); }
 
-.contrarian-header {
+.review-header {
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -831,18 +834,18 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     user-select: none;
     transition: background 0.15s;
 }
-.contrarian-header:hover { background: var(--bg-hover); }
+.review-header:hover { background: var(--bg-hover); }
 
-.contrarian-icon { font-size: 1.1rem; }
-.contrarian-title { font-weight: 500; font-size: 0.95rem; }
-.contrarian-toggle {
+.review-icon { font-size: 1.1rem; }
+.review-title { font-weight: 500; font-size: 0.95rem; }
+.review-toggle {
     margin-left: auto;
     color: var(--text-muted);
     font-size: 0.8rem;
     transition: transform 0.2s;
 }
 
-.contrarian-badge {
+.review-badge {
     display: inline-block;
     padding: 0.15rem 0.6rem;
     border-radius: var(--radius-pill);
@@ -854,8 +857,11 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
 .badge-weak { background: rgba(0,168,126,0.2); color: var(--accent-green); }
 .badge-moderate { background: rgba(236,126,0,0.2); color: var(--accent-orange); }
 .badge-strong { background: rgba(226,59,74,0.2); color: var(--accent-red); }
+.badge-alpha-none { background: rgba(0,168,126,0.2); color: var(--accent-green); }
+.badge-alpha-moderate { background: rgba(33,150,243,0.2); color: var(--accent-blue, #2196f3); }
+.badge-alpha-strong { background: rgba(33,150,243,0.3); color: var(--accent-blue, #2196f3); }
 
-.contrarian-body {
+.review-body {
     padding: 0 1.25rem 1rem;
     border-top: 1px solid var(--border);
     transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
@@ -863,7 +869,7 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     opacity: 1;
     overflow: hidden;
 }
-.contrarian-body.collapsed {
+.review-body.collapsed {
     max-height: 0;
     padding-top: 0;
     padding-bottom: 0;
@@ -871,28 +877,28 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     opacity: 0;
 }
 
-.contrarian-arguments {
+.review-arguments {
     padding-left: 1.25rem;
     margin: 0.75rem 0;
     list-style: decimal;
 }
-.contrarian-arguments li {
+.review-arguments li {
     margin-bottom: 0.6rem;
     font-size: 0.9rem;
     line-height: 1.5;
 }
-.contrarian-arguments li strong {
+.review-arguments li strong {
     display: block;
     color: var(--text);
 }
-.contrarian-data-support {
+.review-data-support {
     display: block;
     color: var(--text-muted);
     font-size: 0.82rem;
     margin-top: 0.15rem;
 }
 
-.contrarian-verdict {
+.review-verdict {
     padding: 0.6rem 0.85rem;
     background: var(--bg-input);
     border-radius: var(--radius);
@@ -900,7 +906,14 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     line-height: 1.5;
     margin-top: 0.5rem;
 }
-.contrarian-verdict em { color: var(--text-muted); }
+.review-verdict em { color: var(--text-muted); }
+
+/* Alpha Advisor specific */
+.alpha-alternative { margin: 0.75rem 0; }
+.alpha-action { font-size: 0.92rem; margin-bottom: 0.4rem; }
+.alpha-rationale { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.5; }
+.alpha-premium { font-size: 0.88rem; font-weight: 500; margin-bottom: 0.3rem; }
+.alpha-risk { font-size: 0.85rem; color: var(--accent-orange); margin-bottom: 0.3rem; }
 
 /* ── Responsive additions ── */
 @media (max-width: 640px) {

@@ -23,7 +23,8 @@ from .options_chain_parser import (
     OPTIONS_CHAIN_SCHEMA_DESCRIPTION,
 )
 from .tv_cache import get_tv_cache as _get_tv_cache
-from .tv_contrarian_instructions import get_contrarian_instructions, CONTRARIAN_OUTPUT_SCHEMA
+from .tv_supervisor_instructions import get_supervisor_instructions, SUPERVISOR_OUTPUT_SCHEMA
+from .tv_alpha_instructions import get_alpha_instructions, ALPHA_OUTPUT_SCHEMA
 
 # Canonical timestamp format — used for ALL activity and alert log entries.
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -60,7 +61,7 @@ class AgentRunner:
     """Manages agent execution using Microsoft Agent Framework with TradingView pre-fetch."""
 
     PROLONGED_WAIT_THRESHOLD = 5
-    CONTRARIAN_COOLDOWN = 3  # WAITs between repeated contrarian reviews
+    SUPERVISOR_COOLDOWN = 3  # WAITs between repeated supervisor/alpha reviews
     
     def __init__(self, project_endpoint: str, model: str, api_key: str,
                  telegram_notifier=None):
@@ -590,14 +591,14 @@ class AgentRunner:
         Returns True if the most recent ``threshold`` activities are all
         non-alert WAIT decisions (indicating the agent has been passive
         for too long) AND enough WAITs have passed since the last
-        contrarian review (cooldown).  Never raises — returns False on
+        supervisor/alpha review (cooldown).  Never raises — returns False on
         any error so the pipeline is never blocked.
         """
         if threshold is None:
             threshold = self.PROLONGED_WAIT_THRESHOLD
         try:
             # Fetch enough activities to check both threshold and cooldown
-            fetch_count = threshold + self.CONTRARIAN_COOLDOWN + 5
+            fetch_count = threshold + self.SUPERVISOR_COOLDOWN + 5
             recent = cosmos.get_recent_activities(
                 symbol=symbol,
                 agent_type=agent_type,
@@ -617,14 +618,15 @@ class AgentRunner:
                 if activity != "WAIT":
                     return False
 
-            # Cooldown: count WAITs since the last contrarian review
-            waits_since_last_contrarian = 0
+            # Cooldown: count WAITs since the last supervisor review
+            # (check both new field name and legacy field for backward compat)
+            waits_since_last_review = 0
             for act in recent:
-                if act.get("contrarian_view"):
+                if act.get("supervisor_view") or act.get("contrarian_view"):
                     break
-                waits_since_last_contrarian += 1
-            # If a previous contrarian exists, enforce cooldown
-            if waits_since_last_contrarian < len(recent) and waits_since_last_contrarian < self.CONTRARIAN_COOLDOWN:
+                waits_since_last_review += 1
+            # If a previous review exists, enforce cooldown
+            if waits_since_last_review < len(recent) and waits_since_last_review < self.SUPERVISOR_COOLDOWN:
                 return False
 
             return True
@@ -636,38 +638,37 @@ class AgentRunner:
             return False
 
     # ------------------------------------------------------------------
-    # Contrarian Agent — post-decision challenge (Phase 3)
+    # Supervisor Agent — post-decision quality audit (Phase 3a)
     # ------------------------------------------------------------------
 
-    async def _run_contrarian_review(
+    async def _run_supervisor_review(
         self,
         activity_payload: dict,
         market_data: str,
         previous_context: str,
         agent_type: str,
     ) -> dict | None:
-        """Run a contrarian agent to challenge the primary decision.
+        """Run a supervisor agent to audit the primary decision.
 
-        Creates a separate agent instance with contrarian instructions.
-        Returns the parsed contrarian_view dict, or None on failure.
-        The contrarian MUST NEVER block the primary decision flow.
+        Creates a separate agent instance with supervisor instructions.
+        Returns the parsed supervisor_view dict, or None on failure.
+        The supervisor MUST NEVER block the primary decision flow.
         """
         try:
             activity_str = activity_payload.get("activity", "SELL")
             decision_type = activity_str.upper()
 
-            # Normalize monitor agent types to base types for contrarian
             _AGENT_TYPE_MAP = {
                 "open_call_monitor": "open_call",
                 "open_put_monitor": "open_put",
             }
-            contrarian_agent_type = _AGENT_TYPE_MAP.get(agent_type, agent_type)
+            supervisor_agent_type = _AGENT_TYPE_MAP.get(agent_type, agent_type)
 
-            instructions = get_contrarian_instructions(contrarian_agent_type, decision_type)
+            instructions = get_supervisor_instructions(supervisor_agent_type, decision_type)
 
-            message = f"""Challenge the following trading decision:
+            message = f"""Audit the following trading decision:
 
-=== DECISION TO CHALLENGE ===
+=== DECISION TO AUDIT ===
 {json.dumps(activity_payload, indent=2, default=str)}
 
 === MARKET DATA ===
@@ -677,38 +678,36 @@ class AgentRunner:
 {previous_context}
 
 === OUTPUT FORMAT ===
-{CONTRARIAN_OUTPUT_SCHEMA}
+{SUPERVISOR_OUTPUT_SCHEMA}
 
-Provide your contrarian analysis in the JSON format specified above."""
+Provide your supervisor audit in the JSON format specified above."""
 
             agent = ChatAgent(
                 chat_client=self.client,
-                name=f"Contrarian_{agent_type}",
+                name=f"Supervisor_{agent_type}",
                 instructions=instructions,
             )
             result = await agent.run(message)
             response_text = result.text or str(result)
 
             logger.info(
-                "Contrarian review completed for %s — response length=%d",
+                "Supervisor review completed for %s — response length=%d",
                 activity_payload.get("symbol", "?"), len(response_text),
             )
             logger.debug(
-                "Contrarian first 500 chars: %s", response_text[:500],
+                "Supervisor first 500 chars: %s", response_text[:500],
             )
 
             # Parse JSON from response
-            contrarian_data = None
-            # Try fenced JSON blocks first
+            supervisor_data = None
             for block in re.findall(r'```json\s*\n(.*?)```', response_text, re.DOTALL):
                 try:
-                    contrarian_data = json.loads(block.strip())
+                    supervisor_data = json.loads(block.strip())
                     break
                 except json.JSONDecodeError:
                     continue
 
-            # Fallback: look for raw JSON with challenge_strength
-            if contrarian_data is None:
+            if supervisor_data is None:
                 for match in re.finditer(r'\{[^{}]*"challenge_strength"\s*:', response_text):
                     start = match.start()
                     depth = 0
@@ -719,49 +718,167 @@ Provide your contrarian analysis in the JSON format specified above."""
                             depth -= 1
                             if depth == 0:
                                 try:
-                                    contrarian_data = json.loads(response_text[start:i + 1])
+                                    supervisor_data = json.loads(response_text[start:i + 1])
                                 except json.JSONDecodeError:
                                     pass
                                 break
-                    if contrarian_data is not None:
+                    if supervisor_data is not None:
                         break
 
-            if contrarian_data is None:
-                logger.warning("Contrarian returned no parseable JSON")
+            if supervisor_data is None:
+                logger.warning("Supervisor returned no parseable JSON")
                 return None
 
-            # Validate required fields
             required = {"challenge_strength", "counter_arguments", "net_assessment", "one_liner"}
-            missing = required - set(contrarian_data.keys())
+            missing = required - set(supervisor_data.keys())
             if missing:
-                logger.warning("Contrarian JSON missing fields: %s", missing)
+                logger.warning("Supervisor JSON missing fields: %s", missing)
                 return None
 
-            # Validate challenge_strength value
-            strength = str(contrarian_data.get("challenge_strength", "")).upper()
+            strength = str(supervisor_data.get("challenge_strength", "")).upper()
             if strength not in ("WEAK", "MODERATE", "STRONG"):
-                logger.warning("Contrarian invalid challenge_strength: %s", strength)
+                logger.warning("Supervisor invalid challenge_strength: %s", strength)
                 return None
-            contrarian_data["challenge_strength"] = strength
+            supervisor_data["challenge_strength"] = strength
 
             logger.info(
-                "Contrarian challenge for %s: strength=%s one_liner=%s",
+                "Supervisor audit for %s: strength=%s one_liner=%s",
                 activity_payload.get("symbol", "?"),
                 strength,
-                str(contrarian_data.get("one_liner", ""))[:80],
+                str(supervisor_data.get("one_liner", ""))[:80],
             )
-            return contrarian_data
+            return supervisor_data
 
         except Exception:
             logger.warning(
-                "Contrarian review failed for %s — original decision unaffected",
+                "Supervisor review failed for %s — original decision unaffected",
+                activity_payload.get("symbol", "?"),
+                exc_info=True,
+            )
+            return None
+
+    # ------------------------------------------------------------------
+    # Alpha Advisor — aggressive perspective (Phase 3b)
+    # ------------------------------------------------------------------
+
+    async def _run_alpha_review(
+        self,
+        activity_payload: dict,
+        market_data: str,
+        previous_context: str,
+        agent_type: str,
+    ) -> dict | None:
+        """Run an alpha advisor agent for aggressive perspective.
+
+        Creates a separate agent instance with alpha advisor instructions.
+        Returns the parsed alpha_view dict, or None on failure.
+        The alpha advisor MUST NEVER block the primary decision flow.
+        """
+        try:
+            activity_str = activity_payload.get("activity", "SELL")
+            decision_type = activity_str.upper()
+
+            _AGENT_TYPE_MAP = {
+                "open_call_monitor": "open_call",
+                "open_put_monitor": "open_put",
+            }
+            alpha_agent_type = _AGENT_TYPE_MAP.get(agent_type, agent_type)
+
+            instructions = get_alpha_instructions(alpha_agent_type, decision_type)
+
+            message = f"""Provide an aggressive alternative perspective on this decision:
+
+=== DECISION TO REVIEW ===
+{json.dumps(activity_payload, indent=2, default=str)}
+
+=== MARKET DATA ===
+{market_data}
+
+=== PREVIOUS CONTEXT (decision history) ===
+{previous_context}
+
+=== OUTPUT FORMAT ===
+{ALPHA_OUTPUT_SCHEMA}
+
+Provide your alpha advisor analysis in the JSON format specified above."""
+
+            agent = ChatAgent(
+                chat_client=self.client,
+                name=f"Alpha_{agent_type}",
+                instructions=instructions,
+            )
+            result = await agent.run(message)
+            response_text = result.text or str(result)
+
+            logger.info(
+                "Alpha review completed for %s — response length=%d",
+                activity_payload.get("symbol", "?"), len(response_text),
+            )
+            logger.debug(
+                "Alpha first 500 chars: %s", response_text[:500],
+            )
+
+            # Parse JSON from response
+            alpha_data = None
+            for block in re.findall(r'```json\s*\n(.*?)```', response_text, re.DOTALL):
+                try:
+                    alpha_data = json.loads(block.strip())
+                    break
+                except json.JSONDecodeError:
+                    continue
+
+            if alpha_data is None:
+                for match in re.finditer(r'\{[^{}]*"opportunity_strength"\s*:', response_text):
+                    start = match.start()
+                    depth = 0
+                    for i in range(start, len(response_text)):
+                        if response_text[i] == '{':
+                            depth += 1
+                        elif response_text[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                try:
+                                    alpha_data = json.loads(response_text[start:i + 1])
+                                except json.JSONDecodeError:
+                                    pass
+                                break
+                    if alpha_data is not None:
+                        break
+
+            if alpha_data is None:
+                logger.warning("Alpha Advisor returned no parseable JSON")
+                return None
+
+            required = {"opportunity_strength", "alternative", "one_liner"}
+            missing = required - set(alpha_data.keys())
+            if missing:
+                logger.warning("Alpha Advisor JSON missing fields: %s", missing)
+                return None
+
+            strength = str(alpha_data.get("opportunity_strength", "")).upper()
+            if strength not in ("NONE", "MODERATE", "STRONG"):
+                logger.warning("Alpha Advisor invalid opportunity_strength: %s", strength)
+                return None
+            alpha_data["opportunity_strength"] = strength
+
+            logger.info(
+                "Alpha Advisor for %s: opportunity=%s one_liner=%s",
+                activity_payload.get("symbol", "?"),
+                strength,
+                str(alpha_data.get("one_liner", ""))[:80],
+            )
+            return alpha_data
+
+        except Exception:
+            logger.warning(
+                "Alpha review failed for %s — original decision unaffected",
                 activity_payload.get("symbol", "?"),
                 exc_info=True,
             )
             return None
 
     def _build_market_data_block(self, data: dict, symbol: str, exchange: str) -> str:
-        """Build the market data text block for contrarian context."""
+        """Build the market data text block for supervisor/alpha context."""
         return f"""--- OVERVIEW PAGE ({exchange}:{symbol}) ---
 {data.get('overview', '')}
 
@@ -920,23 +1037,38 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             if is_alert:
                 print(f"⚠️ SELL ALERT logged for {full_symbol}")
 
-                # Contrarian review BEFORE Telegram (so we include it in one message)
-                contrarian_view = None
+                # Supervisor + Alpha reviews BEFORE Telegram (include in one message)
                 market_data = self._build_market_data_block(data, symbol, exchange)
-                contrarian_view = await self._run_contrarian_review(
-                    activity_payload=activity_payload,
-                    market_data=market_data,
-                    previous_context=previous_context,
-                    agent_type=agent_type,
+                supervisor_view, alpha_view = await asyncio.gather(
+                    self._run_supervisor_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    ),
+                    self._run_alpha_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    ),
                 )
-                if contrarian_view is not None:
+                if supervisor_view is not None:
                     cosmos.update_activity_field(
                         doc_id=dec_doc["id"],
                         symbol=symbol,
-                        field="contrarian_view",
-                        value=contrarian_view,
+                        field="supervisor_view",
+                        value=supervisor_view,
                     )
-                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+                    print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+                if alpha_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="alpha_view",
+                        value=alpha_view,
+                    )
+                    print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
 
                 if self.telegram_notifier:
                     # Build display data for Telegram from the activity doc
@@ -953,8 +1085,10 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         "risk_flags": json_data.get("risk_flags") if json_data else None,
                         "premium": json_data.get("premium") if json_data else None,
                     }
-                    if contrarian_view is not None:
-                        alert_data["contrarian_view"] = contrarian_view
+                    if supervisor_view is not None:
+                        alert_data["supervisor_view"] = supervisor_view
+                    if alpha_view is not None:
+                        alert_data["alpha_view"] = alpha_view
                     self.telegram_notifier.send_alert(
                         symbol=symbol, agent_type=agent_type,
                         alert_data=alert_data, is_roll=False,
@@ -962,28 +1096,50 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             else:
                 # Check for prolonged WAIT pattern (5+ consecutive)
                 if self._detect_prolonged_wait(cosmos, symbol, agent_type):
-                    print(f"⏳ Prolonged WAIT detected for {full_symbol} — triggering contrarian review")
+                    print(f"⏳ Prolonged WAIT detected for {full_symbol} — triggering supervisor + alpha review")
                     market_data = self._build_market_data_block(data, symbol, exchange)
-                    contrarian_view = await self._run_contrarian_review(
-                        activity_payload=activity_payload,
-                        market_data=market_data,
-                        previous_context=previous_context,
-                        agent_type=agent_type,
+                    supervisor_view, alpha_view = await asyncio.gather(
+                        self._run_supervisor_review(
+                            activity_payload=activity_payload,
+                            market_data=market_data,
+                            previous_context=previous_context,
+                            agent_type=agent_type,
+                        ),
+                        self._run_alpha_review(
+                            activity_payload=activity_payload,
+                            market_data=market_data,
+                            previous_context=previous_context,
+                            agent_type=agent_type,
+                        ),
                     )
-                    if contrarian_view is not None:
+                    if supervisor_view is not None:
                         cosmos.update_activity_field(
                             doc_id=dec_doc["id"],
                             symbol=symbol,
-                            field="contrarian_view",
-                            value=contrarian_view,
+                            field="supervisor_view",
+                            value=supervisor_view,
                         )
-                        print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
-                        if (self.telegram_notifier and
-                                contrarian_view.get("challenge_strength") in ("MODERATE", "STRONG")):
+                        print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+                    if alpha_view is not None:
+                        cosmos.update_activity_field(
+                            doc_id=dec_doc["id"],
+                            symbol=symbol,
+                            field="alpha_view",
+                            value=alpha_view,
+                        )
+                        print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
+                    if self.telegram_notifier:
+                        # Send prolonged WAIT alert if either review has findings
+                        has_supervisor_finding = (supervisor_view is not None and
+                                                  supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
+                        has_alpha_finding = (alpha_view is not None and
+                                            alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
+                        if has_supervisor_finding or has_alpha_finding:
                             self.telegram_notifier.send_prolonged_wait_alert(
                                 symbol=symbol,
                                 agent_type=agent_type,
-                                contrarian_view=contrarian_view,
+                                supervisor_view=supervisor_view,
+                                alpha_view=alpha_view,
                                 consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
                             )
                 else:
@@ -1597,23 +1753,38 @@ Output your activity in the required JSON format. Use the timestamp above in you
             if is_alert:
                 print(f"⚠️ ROLL ALERT logged for {full_symbol} ${strike} exp {expiration}")
 
-                # Contrarian review BEFORE Telegram (so we include it in one message)
-                contrarian_view = None
+                # Supervisor + Alpha reviews BEFORE Telegram (include in one message)
                 market_data = self._build_market_data_block(data, symbol, exchange)
-                contrarian_view = await self._run_contrarian_review(
-                    activity_payload=activity_payload,
-                    market_data=market_data,
-                    previous_context=previous_context,
-                    agent_type=agent_type,
+                supervisor_view, alpha_view = await asyncio.gather(
+                    self._run_supervisor_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    ),
+                    self._run_alpha_review(
+                        activity_payload=activity_payload,
+                        market_data=market_data,
+                        previous_context=previous_context,
+                        agent_type=agent_type,
+                    ),
                 )
-                if contrarian_view is not None:
+                if supervisor_view is not None:
                     cosmos.update_activity_field(
                         doc_id=dec_doc["id"],
                         symbol=symbol,
-                        field="contrarian_view",
-                        value=contrarian_view,
+                        field="supervisor_view",
+                        value=supervisor_view,
                     )
-                    print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
+                    print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+                if alpha_view is not None:
+                    cosmos.update_activity_field(
+                        doc_id=dec_doc["id"],
+                        symbol=symbol,
+                        field="alpha_view",
+                        value=alpha_view,
+                    )
+                    print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
 
                 if self.telegram_notifier:
                     # Extract roll economics for Telegram notification
@@ -1639,8 +1810,10 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     alert_data["activity"] = alert_data["action"]
                     alert_data["strike"] = alert_data.get("new_strike") or alert_data.get("current_strike")
                     alert_data["expiration"] = alert_data.get("new_expiration") or alert_data.get("current_expiration")
-                    if contrarian_view is not None:
-                        alert_data["contrarian_view"] = contrarian_view
+                    if supervisor_view is not None:
+                        alert_data["supervisor_view"] = supervisor_view
+                    if alpha_view is not None:
+                        alert_data["alpha_view"] = alpha_view
                     self.telegram_notifier.send_alert(
                         symbol=symbol, agent_type=agent_type,
                         alert_data=alert_data, is_roll=True,
@@ -1648,28 +1821,49 @@ Output your activity in the required JSON format. Use the timestamp above in you
             else:
                 # Check for prolonged WAIT pattern (5+ consecutive)
                 if self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id):
-                    print(f"⏳ Prolonged WAIT detected for {full_symbol} ${strike} — triggering contrarian review")
+                    print(f"⏳ Prolonged WAIT detected for {full_symbol} ${strike} — triggering supervisor + alpha review")
                     market_data = self._build_market_data_block(data, symbol, exchange)
-                    contrarian_view = await self._run_contrarian_review(
-                        activity_payload=activity_payload,
-                        market_data=market_data,
-                        previous_context=previous_context,
-                        agent_type=agent_type,
+                    supervisor_view, alpha_view = await asyncio.gather(
+                        self._run_supervisor_review(
+                            activity_payload=activity_payload,
+                            market_data=market_data,
+                            previous_context=previous_context,
+                            agent_type=agent_type,
+                        ),
+                        self._run_alpha_review(
+                            activity_payload=activity_payload,
+                            market_data=market_data,
+                            previous_context=previous_context,
+                            agent_type=agent_type,
+                        ),
                     )
-                    if contrarian_view is not None:
+                    if supervisor_view is not None:
                         cosmos.update_activity_field(
                             doc_id=dec_doc["id"],
                             symbol=symbol,
-                            field="contrarian_view",
-                            value=contrarian_view,
+                            field="supervisor_view",
+                            value=supervisor_view,
                         )
-                        print(f"⚡ Contrarian [{contrarian_view['challenge_strength']}]: {contrarian_view['one_liner']}")
-                        if (self.telegram_notifier and
-                                contrarian_view.get("challenge_strength") in ("MODERATE", "STRONG")):
+                        print(f"🔍 Supervisor [{supervisor_view['challenge_strength']}]: {supervisor_view['one_liner']}")
+                    if alpha_view is not None:
+                        cosmos.update_activity_field(
+                            doc_id=dec_doc["id"],
+                            symbol=symbol,
+                            field="alpha_view",
+                            value=alpha_view,
+                        )
+                        print(f"🚀 Alpha [{alpha_view['opportunity_strength']}]: {alpha_view['one_liner']}")
+                    if self.telegram_notifier:
+                        has_supervisor_finding = (supervisor_view is not None and
+                                                  supervisor_view.get("challenge_strength") in ("MODERATE", "STRONG"))
+                        has_alpha_finding = (alpha_view is not None and
+                                            alpha_view.get("opportunity_strength") in ("MODERATE", "STRONG"))
+                        if has_supervisor_finding or has_alpha_finding:
                             self.telegram_notifier.send_prolonged_wait_alert(
                                 symbol=symbol,
                                 agent_type=agent_type,
-                                contrarian_view=contrarian_view,
+                                supervisor_view=supervisor_view,
+                                alpha_view=alpha_view,
                                 consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
                             )
                 else:

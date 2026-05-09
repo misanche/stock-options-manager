@@ -158,11 +158,17 @@ class TelegramNotifier:
         if risk_rating is not None:
             lines.append(f"Risk: {risk_rating}/10")
 
-        # Inline contrarian (MODERATE/STRONG only)
-        cv = data.get("contrarian_view")
-        if cv and cv.get("challenge_strength") in ("MODERATE", "STRONG"):
+        # Inline supervisor (MODERATE/STRONG only)
+        sv = data.get("supervisor_view") or data.get("contrarian_view")
+        if sv and sv.get("challenge_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\u26a1 Contrarian [{cv['challenge_strength']}]: {cv.get('one_liner', '')}")
+            lines.append(f"\U0001f50d Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
+
+        # Inline alpha advisor (MODERATE/STRONG only)
+        av = data.get("alpha_view")
+        if av and av.get("opportunity_strength") in ("MODERATE", "STRONG"):
+            lines.append("")
+            lines.append(f"\U0001f680 Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
 
         return "\n".join(lines)
 
@@ -212,11 +218,17 @@ class TelegramNotifier:
         if assignment_risk is not None:
             lines.append(f"Assignment Risk: {str(assignment_risk).capitalize()}")
 
-        # Inline contrarian (MODERATE/STRONG only)
-        cv = data.get("contrarian_view")
-        if cv and cv.get("challenge_strength") in ("MODERATE", "STRONG"):
+        # Inline supervisor (MODERATE/STRONG only)
+        sv = data.get("supervisor_view") or data.get("contrarian_view")
+        if sv and sv.get("challenge_strength") in ("MODERATE", "STRONG"):
             lines.append("")
-            lines.append(f"\u26a1 Contrarian [{cv['challenge_strength']}]: {cv.get('one_liner', '')}")
+            lines.append(f"\U0001f50d Supervisor [{sv['challenge_strength']}]: {sv.get('one_liner', '')}")
+
+        # Inline alpha advisor (MODERATE/STRONG only)
+        av = data.get("alpha_view")
+        if av and av.get("opportunity_strength") in ("MODERATE", "STRONG"):
+            lines.append("")
+            lines.append(f"\U0001f680 Alpha [{av['opportunity_strength']}]: {av.get('one_liner', '')}")
 
         return "\n".join(lines)
 
@@ -226,7 +238,8 @@ class TelegramNotifier:
         self,
         symbol: str,
         agent_type: str,
-        contrarian_view: Dict,
+        supervisor_view: Dict | None = None,
+        alpha_view: Dict | None = None,
         consecutive_waits: int = 5,
     ) -> bool:
         """Send a Telegram notification for prolonged WAIT patterns.
@@ -243,28 +256,43 @@ class TelegramNotifier:
 
         try:
             label = AGENT_LABELS.get(agent_type, agent_type)
-            strength = contrarian_view.get("challenge_strength", "N/A")
-            one_liner = contrarian_view.get("one_liner", "")
-            net_assessment = contrarian_view.get("net_assessment", "")
-            counter_args = contrarian_view.get("counter_arguments", [])
 
             lines = [
                 f"\u23f3 <b>PROLONGED WAIT: {symbol}</b> ({label})",
                 f"{consecutive_waits} consecutive WAIT decisions",
-                "",
-                f"\u26a1 Contrarian [{strength}]: {one_liner}",
             ]
 
-            if counter_args:
-                lines.append("")
-                lines.append("Counter-arguments:")
-                for i, arg in enumerate(counter_args, 1):
-                    point = arg.get("point", str(arg)) if isinstance(arg, dict) else str(arg)
-                    lines.append(f"  {i}. {point}")
+            if supervisor_view is not None:
+                strength = supervisor_view.get("challenge_strength", "N/A")
+                one_liner = supervisor_view.get("one_liner", "")
+                net_assessment = supervisor_view.get("net_assessment", "")
+                counter_args = supervisor_view.get("counter_arguments", [])
 
-            if net_assessment:
                 lines.append("")
-                lines.append(f"Verdict: {net_assessment}")
+                lines.append(f"\U0001f50d Supervisor [{strength}]: {one_liner}")
+
+                if counter_args:
+                    lines.append("")
+                    lines.append("Audit findings:")
+                    for i, arg in enumerate(counter_args, 1):
+                        point = arg.get("point", str(arg)) if isinstance(arg, dict) else str(arg)
+                        lines.append(f"  {i}. {point}")
+
+                if net_assessment:
+                    lines.append(f"Verdict: {net_assessment}")
+
+            if alpha_view is not None:
+                opp_strength = alpha_view.get("opportunity_strength", "NONE")
+                alpha_liner = alpha_view.get("one_liner", "")
+                alt = alpha_view.get("alternative", {})
+
+                if opp_strength in ("MODERATE", "STRONG"):
+                    lines.append("")
+                    lines.append(f"\U0001f680 Alpha [{opp_strength}]: {alpha_liner}")
+                    if alt.get("action"):
+                        lines.append(f"  → {alt['action']}")
+                    if alt.get("premium_comparison"):
+                        lines.append(f"  💰 {alt['premium_comparison']}")
 
             return self._send(creds[0], creds[1], "\n".join(lines))
         except Exception:

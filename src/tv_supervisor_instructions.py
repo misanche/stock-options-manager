@@ -1,11 +1,11 @@
 """
-Contrarian Agent System Instructions (Quality Auditor)
+Supervisor Agent System Instructions (Quality Auditor)
 
 Reviews trading decisions for data errors, blind spots, and unaddressed risks.
 Invoked as Phase 3 in the pipeline — only when is_alert=True or on prolonged
 WAIT patterns.
 
-Output is persisted as the ``contrarian_view`` field inside the activity
+Output is persisted as the ``supervisor_view`` field inside the activity
 document (CosmosDB).
 """
 
@@ -13,7 +13,7 @@ document (CosmosDB).
 # Output schema — importable by agent_runner.py for response parsing
 # ---------------------------------------------------------------------------
 
-CONTRARIAN_OUTPUT_SCHEMA = {
+SUPERVISOR_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "challenge_strength": {
@@ -363,8 +363,8 @@ _VALID_DECISIONS: dict[str, set[str]] = {
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_contrarian_instructions(agent_type: str, decision_type: str) -> str:
-    """Return the system prompt for the Contrarian agent.
+def get_supervisor_instructions(agent_type: str, decision_type: str) -> str:
+    """Return the system prompt for the Supervisor agent.
 
     Parameters
     ----------
@@ -372,7 +372,7 @@ def get_contrarian_instructions(agent_type: str, decision_type: str) -> str:
         One of ``"open_call"``, ``"open_put"``, ``"covered_call"``,
         ``"cash_secured_put"``.
     decision_type : str
-        The decision being challenged, e.g. ``"WAIT"``, ``"ROLL_UP"``,
+        The decision being audited, e.g. ``"WAIT"``, ``"ROLL_UP"``,
         ``"SELL"``, ``"CLOSE"``, etc.
 
     Returns
@@ -400,7 +400,7 @@ def get_contrarian_instructions(agent_type: str, decision_type: str) -> str:
     context = _AGENT_CONTEXT[agent_type]
 
     return f"""\
-# ROLE: Options Strategy Auditor — Quality Check
+# ROLE: Options Strategy Supervisor — Quality Audit
 
 You are an experienced options trader who REVIEWS decisions for errors,
 blind spots, and unaddressed risks.  You do NOT make the final call — you

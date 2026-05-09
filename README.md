@@ -4,15 +4,16 @@ Periodic options trading analysis using Microsoft Agent Framework with hybrid Tr
 
 ## Architecture
 
-Six specialized agents handle options trading:
+Seven specialized agents handle options trading:
 - **Covered Call Agent**: Analyzes stocks for covered call writing opportunities
 - **Cash Secured Put Agent**: Analyzes stocks for cash secured put opportunities
 - **Open Call Monitor**: Monitors open covered call positions for assignment risk
 - **Open Put Monitor**: Monitors open cash-secured put positions for assignment risk
-- **Contrarian Agent (Devil's Advocate)**: Challenges trading decisions by arguing the opposite position, providing counter-arguments to reduce confirmation bias
+- **Supervisor Agent (Quality Auditor)**: Validates trading decisions for data errors, blind spots, and unaddressed risks — acts as a quality gate ensuring the primary agents' work is accurate
+- **Alpha Advisor Agent (Aggressive Perspective)**: Provides alternative, more aggressive viewpoints when technically justified — suggesting higher-premium strikes, shorter DTE, or bolder entries to complement the conservative primary agents
 - **Report Agent**: Generates comprehensive per-symbol reports combining technical analysis, dividends, options chain, open position risk, and monitoring recommendations
 
-The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The contrarian agent runs as an optional Phase 3 that challenges actionable decisions before notifications are sent, acting as a built-in devil's advocate. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
+The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The Supervisor and Alpha Advisor run as Phase 3 in parallel — after the primary decision is written but before Telegram notifications, providing quality assurance and aggressive alternatives respectively. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
 
 Both sell-side agents use the Microsoft Agent Framework (`agent-framework`) with TradingView as the data source. Market data is pre-fetched deterministically — overview, technicals, forecast, and dividends via `requests` + `BeautifulSoup` + TradingView scanner API; options chain via [Playwright](https://playwright.dev/python/) (headless Chromium) — and passed to the LLM for analysis. The LLM never touches the browser or makes HTTP requests directly.
 
@@ -31,11 +32,11 @@ Scheduler (main.py)
   │      2. Pre-fetch TradingView data (overview, technicals, forecast, options chain)
   │      3. LLM analyzes pre-fetched data → structured JSON activity
   │      4. Write activity to CosmosDB; if SELL → also write alert document
-  │      5. Phase 3 (Contrarian): If alert or prolonged WAIT → devil's advocate challenges the decision
-  │      6. Telegram notification includes contrarian one-liner (if MODERATE/STRONG)
+  │      5. Phase 3 (Supervisor + Alpha): If alert or prolonged WAIT → quality audit + aggressive alternative (in parallel)
+  │      6. Telegram notification includes supervisor/alpha one-liners (if MODERATE/STRONG)
   │
   ├─ Query CosmosDB for symbols with watchlist.cash_secured_put = true
-  │    (same loop with contrarian phase, different agent instructions)
+  │    (same loop with supervisor + alpha phase, different agent instructions)
   │
   ├─ Query CosmosDB for symbols with active call positions
   │    for each position:
@@ -44,11 +45,11 @@ Scheduler (main.py)
   │      3. Phase 1 (Assessment): LLM evaluates assignment risk → WAIT or handoff to Phase 2
   │      4. Phase 2 (Roll Management): Selects specific roll targets from filtered options chain, calculates economics
   │      5. Write activity to CosmosDB; if ROLL/CLOSE → also write alert
-  │      6. Phase 3 (Contrarian): If alert or prolonged WAIT → devil's advocate challenges the decision
-  │      7. Telegram notification includes contrarian one-liner (if MODERATE/STRONG)
+  │      6. Phase 3 (Supervisor + Alpha): If alert or prolonged WAIT → quality audit + aggressive alternative (in parallel)
+  │      7. Telegram notification includes supervisor/alpha one-liners (if MODERATE/STRONG)
   │
   └─ Query CosmosDB for symbols with active put positions
-       (same two-phase pipeline with contrarian phase, different agent instructions)
+       (same two-phase pipeline with supervisor + alpha phase, different agent instructions)
 ```
 
 **Data gathering:** Python pre-fetches ALL TradingView data deterministically from `tv_data_fetcher.py`. Overview, technicals, forecast, and dividends are fetched via `requests` + `BeautifulSoup` + TradingView scanner API (`scanner.tradingview.com/america/scan2`) — no browser needed. Options chain still uses Playwright (headless Chromium) with `page.on("response")` interception because it requires browser authentication. The LLM never touches the browser or makes HTTP requests. It receives the data as text and only performs analysis. See [Pre-fetch Architecture](#pre-fetch-architecture-tradingview) below.
@@ -121,25 +122,25 @@ Every sell-side agent output (Covered Call and Cash Secured Put) includes a **ri
 
 The rating appears in JSON output (`risk_rating` integer + `risk_rating_breakdown` object) and in the SUMMARY line (`Risk X/10`). Telegram sell alerts also include `Risk: X/10`.
 
-### Contrarian Agent (Devil's Advocate)
+### Supervisor Agent (Quality Auditor)
 
-The Contrarian Agent is a separate LLM instance that challenges every actionable trading decision by arguing the opposite position. It acts as a built-in devil's advocate to reduce confirmation bias.
+The Supervisor Agent is a separate LLM instance that audits every actionable trading decision for data errors, blind spots, and unaddressed risks. It verifies the primary analyst's work so the human trader can proceed with confidence or revisit genuine issues. Unlike a contrarian, it does NOT argue the opposite position — it validates accuracy and flags only genuine findings.
 
 **When it runs:**
 
 | Trigger | Agent Types | Example |
 |---------|------------|---------|
-| Alert decisions (SELL, ROLL_*, CLOSE) | All agent types | A SELL alert always triggers a contrarian review |
-| Prolonged WAIT (5+ consecutive) | All agent types | Symbol stuck in WAIT for 5+ cycles triggers contrarian (cooldown: 3 WAITs between reviews) |
-| Normal WAIT | — | No contrarian (noise reduction) |
+| Alert decisions (SELL, ROLL_*, CLOSE) | All agent types | A SELL alert always triggers a supervisor review |
+| Prolonged WAIT (5+ consecutive) | All agent types | Symbol stuck in WAIT for 5+ cycles triggers supervisor (cooldown: 3 WAITs between reviews) |
+| Normal WAIT | — | No supervisor (noise reduction) |
 
-**Pipeline position:** The contrarian runs as Phase 3 — after the primary decision is written to CosmosDB but before the Telegram notification is sent. This allows the contrarian one-liner to be included in a single unified alert message.
+**Pipeline position:** The Supervisor runs as Phase 3a — after the primary decision is written to CosmosDB but before the Telegram notification is sent. It runs in parallel with the Alpha Advisor.
 
 **How it works:**
 1. A separate ChatAgent instance receives the primary agent's decision, market data, and recent context
-2. It uses decision-specific playbooks to argue the opposite position
+2. It uses decision-specific playbooks to audit the decision quality
 3. Output is a structured JSON with challenge strength, counter-arguments, net assessment, and a one-liner
-4. The `contrarian_view` is stored as a field on the activity document in CosmosDB
+4. The `supervisor_view` is stored as a field on the activity document in CosmosDB
 
 **Output schema:**
 ```json
@@ -147,7 +148,7 @@ The Contrarian Agent is a separate LLM instance that challenges every actionable
   "challenge_strength": "STRONG | MODERATE | WEAK",
   "counter_arguments": [
     {
-      "point": "One-sentence counter-argument",
+      "point": "One-sentence audit finding or confirmation",
       "data_support": "Specific data backing this argument"
     }
   ],
@@ -156,34 +157,73 @@ The Contrarian Agent is a separate LLM instance that challenges every actionable
 }
 ```
 
-**Challenge playbooks (8 decision types):**
+**Key behaviors:**
+- **WEAK = success:** A WEAK finding means the original analysis is thorough and well-supported — this is the best outcome
+- **Never manufactures objections:** Only flags genuine data misreads, ignored risks, logical gaps, or overlooked alternatives
+- **Premium yield benchmarks:** Knows that CSP >1.5%/month is GOOD, CC >1%/month is GOOD — never flags good yields as "low"
+- **Premium-expiration verification:** Rule #9 verifies that premium values match the correct expiration key in the options chain (cross-expiration mix-ups are a known error pattern)
+- **Non-blocking:** Supervisor failures never affect the primary decision flow
+
+**Audit playbooks (9 decision types):**
 
 | Decision | Playbook Focus |
 |----------|---------------|
-| WAIT | Argue for action — capital efficiency, theta stagnation, opportunity cost |
+| WAIT | Capital efficiency, theta stagnation, opportunity cost, directional risk |
 | ROLL_UP | Overbought reversion, buyback cost vs. credit, time decay advantage |
 | ROLL_DOWN | Support bounce, minimal premium delta, oversold signals |
 | ROLL_UP_AND_OUT | Overbought reversion, extending obligation risk, close-and-reenter |
 | ROLL_DOWN_AND_OUT | Support bounce, double penalty (lower strike + longer exposure) |
 | ROLL_OUT | Strike viability, theta already captured, event risk |
 | CLOSE | Remaining theta, premium recapture, technical reversal (exception: risk management triggers → WEAK) |
-| SELL | IV rank reality check, earnings proximity, technical headwinds |
-| NOT_NOW | Argue for action — support/resistance alignment, elevated IV, opportunity cost |
+| SELL | IV rank reality check, earnings proximity, technical headwinds, premium adequacy with benchmarks |
+| NOT_NOW | Support/resistance alignment, elevated IV, opportunity cost accumulation |
 
-**Agent context awareness:** The contrarian receives context about which type of primary agent made the decision (covered call watchlist, cash-secured put watchlist, open call monitor, open put monitor) and tailors its challenge accordingly.
+### Alpha Advisor Agent (Aggressive Perspective)
 
-**Notification integration:**
-- **MODERATE/STRONG** challenges: one-liner appended to the Telegram alert message (single unified message)
-- **WEAK** challenges: stored in CosmosDB only, visible in web dashboard but no Telegram noise
-- Non-blocking: contrarian failures never affect the primary decision flow
+The Alpha Advisor is a separate LLM instance that provides alternative, more aggressive viewpoints on trading decisions. It complements the conservative primary agents by suggesting higher-premium alternatives **only when technically justified** — it does NOT replace the conservative recommendation.
 
-**Prolonged WAIT detection:**
-When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), the contrarian is triggered to challenge whether continued waiting is optimal. This catches situations where inaction may be losing opportunities. A cooldown of 3 WAITs (`CONTRARIAN_COOLDOWN = 3`) prevents the contrarian from firing on every subsequent WAIT — after a contrarian review, at least 3 more WAITs must occur before it triggers again.
+**When it runs:** Same triggers as the Supervisor (alerts, prolonged WAITs, on-demand). Runs in parallel with the Supervisor as Phase 3b.
+
+**Philosophy:**
+- **Not a contrarian:** It agrees with the trade direction but suggests bolder parameters
+- **Data-driven only:** Every suggestion must cite specific technical/quantitative evidence
+- **NONE is valid:** If the conservative choice is already excellent, it says so — not every trade has a better aggressive version
+- **Risk transparency:** Every alternative clearly states the additional risk vs. the conservative choice
+
+**Output schema:**
+```json
+{
+  "opportunity_strength": "STRONG | MODERATE | NONE",
+  "alternative": {
+    "action": "What the aggressive alternative recommends",
+    "rationale": "Technical/quantitative evidence supporting this",
+    "additional_risk": "Extra risk vs. conservative choice",
+    "premium_comparison": "Conservative: $X (Y%/mo) vs. Aggressive: $A (B%/mo)"
+  },
+  "one_liner": "Short summary for Telegram notification"
+}
+```
+
+**What it suggests (examples):**
+- **SELL:** Closer strike with higher delta (0.30 vs. 0.20) for 3x more premium, when support levels justify it
+- **ROLL:** Shorter DTE for faster theta decay and capital efficiency
+- **WAIT:** Early close + re-entry at a fresher strike for more premium
+- **NOT_NOW:** Entry despite neutral technicals when IV rank is high enough to compensate
+
+**Safety constraints:**
+- Never suggests delta > 0.50 (stays in premium-selling territory)
+- Never violates the 45 DTE maximum rule
+- Never suggests entering before earnings if the primary agent rejected for that reason
+- Only suggests aggressive alternatives when premium improvement is significant (>50% more) AND technically supported
+- Always includes `premium_comparison` so the trader sees the exact trade-off
+
+**Prolonged WAIT detection (shared with Supervisor):**
+When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), both the Supervisor and Alpha Advisor are triggered. The Supervisor checks if continued waiting is losing opportunities; the Alpha Advisor checks if an aggressive entry or adjustment could work. A cooldown of 3 WAITs (`SUPERVISOR_COOLDOWN = 3`) prevents repeated reviews — after a review, at least 3 more WAITs must occur before triggering again.
 
 **Web dashboard integration:**
-- **Activity detail page**: Collapsible "Contrarian Perspective" panel with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) showing counter-arguments and net assessment
-- **Dashboard & symbol detail**: 🤔 indicator icon on WAIT activities that have MODERATE or STRONG contrarian opinions (STRONG gets a pulse animation)
-- Rolls and sells always have contrarian reviews, so the indicator icon is only needed for WAIT decisions
+- **Activity detail page**: Two collapsible panels — "Supervisor" (🔍) with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) and "Alpha Advisor" (🚀) with opportunity badges (🟢 NONE, 🔵 MODERATE, 🔵 STRONG)
+- **Dashboard & symbol detail**: 🤔 indicator icon on WAIT activities that have MODERATE or STRONG supervisor opinions (STRONG gets a pulse animation)
+- **WEAK/NONE panels** auto-collapse on page load to reduce noise
 
 ### Position Lifecycle
 
@@ -340,7 +380,7 @@ For `SELL` activities, `strike`, `expiration`, premium, `risk_rating`, and `risk
 
 ### Telegram Notifications
 
-When a `SELL`, `ROLL`, or `CLOSE` alert is generated, a Telegram notification is sent if enabled (see [Configuration](#configuration)). The message includes the symbol, action, and key details (strike, expiration, risk flags). Sell alerts include the risk rating (`Risk: X/10`) and premium. Roll alerts include roll economics (buyback cost, new premium, net credit/debit) and assignment risk level. Close alerts show the buyback cost for the position exit. When a contrarian review produces a **MODERATE** or **STRONG** challenge, the contrarian one-liner is appended to the alert message as a unified notification. **WEAK** challenges are omitted from Telegram to reduce noise — they remain accessible in the web dashboard.
+When a `SELL`, `ROLL`, or `CLOSE` alert is generated, a Telegram notification is sent if enabled (see [Configuration](#configuration)). The message includes the symbol, action, and key details (strike, expiration, risk flags). Sell alerts include the risk rating (`Risk: X/10`) and premium. Roll alerts include roll economics (buyback cost, new premium, net credit/debit) and assignment risk level. Close alerts show the buyback cost for the position exit. When a supervisor review produces a **MODERATE** or **STRONG** challenge, the supervisor one-liner is appended to the alert. When the Alpha Advisor finds a **MODERATE** or **STRONG** opportunity, its one-liner is also included. **WEAK/NONE** results are omitted from Telegram to reduce noise — they remain accessible in the web dashboard.
 
 ## Dual-Mode Chat Experience
 
@@ -479,7 +519,8 @@ stock-options-manager/
 │   ├── tv_open_call_chat_instructions.py # Chat instructions for open call analysis
 │   ├── tv_open_put_chat_instructions.py  # Chat instructions for open put analysis
 │   ├── tv_report_instructions.py         # Report agent system prompt
-│   ├── tv_contrarian_instructions.py     # Contrarian agent (devil's advocate) — 8 playbooks, 4 agent contexts
+│   ├── tv_supervisor_instructions.py      # Supervisor agent (quality auditor) — 9 playbooks, 4 agent contexts
+│   ├── tv_alpha_instructions.py           # Alpha Advisor agent (aggressive perspective) — 9 playbooks, 4 agent contexts
 │   └── telegram_notifier.py              # Telegram notification service — sends alerts via bot API
 ├── scripts/
 │   └── provision_cosmosdb.sh             # Azure CosmosDB provisioning via az CLI
@@ -508,10 +549,10 @@ stock-options-manager/
 
 ## Web Dashboard
 
-- **Dashboard** (`/`) — Alerts overview by agent type with rolling time-range counts (today, last 7 days, last 30 days), scheduler status, recent activity feed with alert indicators and clickable links, position summary. Activities can be filtered by **confidence level** (high/medium/low) and **agent type** for granular views. WAIT activities with MODERATE or STRONG contrarian opinions display a 🤔 indicator icon (STRONG gets a pulse animation).
+- **Dashboard** (`/`) — Alerts overview by agent type with rolling time-range counts (today, last 7 days, last 30 days), scheduler status, recent activity feed with alert indicators and clickable links, position summary. Activities can be filtered by **confidence level** (high/medium/low) and **agent type** for granular views. WAIT activities with MODERATE or STRONG supervisor opinions display a 🤔 indicator icon (STRONG gets a pulse animation).
 - **Alert Details** (`/alerts/{agent}/{symbol}`) — All alerts for a specific symbol, newest first, with activity badges and risk flags.
 - **Alert + Activities** (`/alerts/{agent}/{symbol}/{index}`) — Full alert JSON and backing activities from the same time window.
-- **Symbol Detail** (`/symbols/{symbol}`) — Full detail page for a symbol: expandable positions with source traceability, editable notes field, Close/Roll/Delete actions, activities, alerts, and "Open Position from Alert" / "Roll Position from Alert" buttons on activity detail. Features a **play button** (▶) for running individual symbol analysis on demand. **Generate Report** and **Chat** buttons are aligned right; watchlist toggles are aligned left. Activities support confidence and agent-type filtering. WAIT activities with MODERATE or STRONG contrarian opinions display a 🤔 indicator icon. Activity detail includes a collapsible "Contrarian Perspective" panel with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) showing counter-arguments and net assessment.
+- **Symbol Detail** (`/symbols/{symbol}`) — Full detail page for a symbol: expandable positions with source traceability, editable notes field, Close/Roll/Delete actions, activities, alerts, and "Open Position from Alert" / "Roll Position from Alert" buttons on activity detail. Features a **play button** (▶) for running individual symbol analysis on demand. **Generate Report** and **Chat** buttons are aligned right; watchlist toggles are aligned left. Activities support confidence and agent-type filtering. WAIT activities with MODERATE or STRONG supervisor opinions display a 🤔 indicator icon. Activity detail includes collapsible "Supervisor" and "Alpha Advisor" panels with color-coded badges showing audit findings and aggressive alternatives.
 - **Symbol Report** (`/symbols/{symbol}/report`) — Dedicated report display page showing the latest generated report for a symbol (technical analysis, dividends, options chain, risk assessment, and recommendations).
 - **Symbol Chat** (`/symbols/{symbol}/chat`) — Per-symbol chat page with a context selection screen before starting the conversation. Pre-loads TradingView data via the cache layer for faster responses. Supports open call and open put analysis contexts.
 - **Fetch Preview** (`/symbols/{symbol}/fetch-preview`) — Debug page showing raw TradingView data for each resource (overview, technicals, forecast, options chain) with fetch timing and size.

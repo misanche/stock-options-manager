@@ -272,10 +272,10 @@ if (document.getElementById('sym-activity-time-filter')) {
     applyTableFilter('sym-activity-time-filter', '#activities-table', 'sym-activity-agent-filter', 'sym-activity-confidence-filter');
 }
 
-// ── Contrarian panel toggle ──
-function toggleContrarian() {
-    var body = document.getElementById('contrarian-body');
-    var toggle = document.getElementById('contrarian-toggle');
+// ── Review panel toggle (Supervisor + Alpha) ──
+function togglePanel(panelType) {
+    var body = document.getElementById(panelType + '-body');
+    var toggle = document.getElementById(panelType + '-toggle');
     if (!body) return;
     body.classList.toggle('collapsed');
     if (toggle) {
@@ -283,13 +283,13 @@ function toggleContrarian() {
     }
 }
 
-// Auto-collapse WEAK panels on load
+// Auto-collapse WEAK/NONE panels on load
 (function() {
-    var panel = document.querySelector('.contrarian-weak');
-    if (panel) {
-        var body = panel.querySelector('.contrarian-body');
-        var toggle = panel.querySelector('.contrarian-toggle');
+    var weakPanels = document.querySelectorAll('.review-weak, .review-alpha-none');
+    weakPanels.forEach(function(panel) {
+        var body = panel.querySelector('.review-body');
+        var toggle = panel.querySelector('.review-toggle');
         if (body) body.classList.add('collapsed');
         if (toggle) toggle.textContent = '▶';
-    }
+    });
 })();

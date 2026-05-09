@@ -146,40 +146,86 @@
     </div>
 </div>
 
-<!-- Contrarian perspective panel -->
-{% if activity.contrarian_view %}
-<div class="contrarian-panel contrarian-{{ activity.contrarian_view.challenge_strength|lower }}"
-     id="contrarian-panel">
-    <div class="contrarian-header" onclick="toggleContrarian()">
-        <span class="contrarian-icon">🔍</span>
-        <span class="contrarian-title">Perspectiva Contrarian</span>
-        <span class="contrarian-badge badge-{{ activity.contrarian_view.challenge_strength|lower }}">
-            {% if activity.contrarian_view.challenge_strength|upper == 'WEAK' %}Decision is solid
-            {% elif activity.contrarian_view.challenge_strength|upper == 'MODERATE' %}Points to consider
-            {% elif activity.contrarian_view.challenge_strength|upper == 'STRONG' %}Seriously reconsider
-            {% else %}{{ activity.contrarian_view.challenge_strength }}
+<!-- Supervisor perspective panel (check both new and legacy field names) -->
+{% set sv = activity.supervisor_view or activity.contrarian_view %}
+{% if sv %}
+<div class="review-panel review-{{ sv.challenge_strength|lower }}"
+     id="supervisor-panel">
+    <div class="review-header" onclick="togglePanel('supervisor')">
+        <span class="review-icon">🔍</span>
+        <span class="review-title">Supervisor</span>
+        <span class="review-badge badge-{{ sv.challenge_strength|lower }}">
+            {% if sv.challenge_strength|upper == 'WEAK' %}Decision is solid
+            {% elif sv.challenge_strength|upper == 'MODERATE' %}Points to consider
+            {% elif sv.challenge_strength|upper == 'STRONG' %}Seriously reconsider
+            {% else %}{{ sv.challenge_strength }}
             {% endif %}
         </span>
-        <span class="contrarian-toggle" id="contrarian-toggle">▼</span>
+        <span class="review-toggle" id="supervisor-toggle">▼</span>
     </div>
-    <div class="contrarian-body" id="contrarian-body">
-        {% if activity.contrarian_view.counter_arguments %}
-        <ol class="contrarian-arguments">
-            {% for arg in activity.contrarian_view.counter_arguments %}
+    <div class="review-body" id="supervisor-body">
+        {% if sv.counter_arguments %}
+        <ol class="review-arguments">
+            {% for arg in sv.counter_arguments %}
             <li>
                 <strong>{{ arg.point }}</strong>
                 {% if arg.data_support %}
-                <span class="contrarian-data-support">{{ arg.data_support }}</span>
+                <span class="review-data-support">{{ arg.data_support }}</span>
                 {% endif %}
             </li>
             {% endfor %}
         </ol>
         {% endif %}
-        <div class="contrarian-verdict">
-            {% if activity.contrarian_view.net_assessment|upper == 'RECONSIDER' %}
-            ⚠️ <strong>Reconsider</strong>{% if activity.contrarian_view.one_liner %} — <em>{{ activity.contrarian_view.one_liner }}</em>{% endif %}
+        <div class="review-verdict">
+            {% if sv.net_assessment|upper == 'RECONSIDER' %}
+            ⚠️ <strong>Reconsider</strong>{% if sv.one_liner %} — <em>{{ sv.one_liner }}</em>{% endif %}
             {% else %}
-            ✅ <strong>Original decision holds</strong>{% if activity.contrarian_view.one_liner %} — <em>{{ activity.contrarian_view.one_liner }}</em>{% endif %}
+            ✅ <strong>Original decision holds</strong>{% if sv.one_liner %} — <em>{{ sv.one_liner }}</em>{% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Alpha Advisor perspective panel -->
+{% if activity.alpha_view %}
+{% set av = activity.alpha_view %}
+<div class="review-panel review-alpha-{{ av.opportunity_strength|lower }}"
+     id="alpha-panel">
+    <div class="review-header" onclick="togglePanel('alpha')">
+        <span class="review-icon">🚀</span>
+        <span class="review-title">Alpha Advisor</span>
+        <span class="review-badge badge-alpha-{{ av.opportunity_strength|lower }}">
+            {% if av.opportunity_strength|upper == 'NONE' %}Conservative is optimal
+            {% elif av.opportunity_strength|upper == 'MODERATE' %}Alternative available
+            {% elif av.opportunity_strength|upper == 'STRONG' %}Strong opportunity
+            {% else %}{{ av.opportunity_strength }}
+            {% endif %}
+        </span>
+        <span class="review-toggle" id="alpha-toggle">▼</span>
+    </div>
+    <div class="review-body" id="alpha-body">
+        {% if av.alternative %}
+        <div class="alpha-alternative">
+            {% if av.alternative.action %}
+            <div class="alpha-action"><strong>→ {{ av.alternative.action }}</strong></div>
+            {% endif %}
+            {% if av.alternative.rationale %}
+            <div class="alpha-rationale">{{ av.alternative.rationale }}</div>
+            {% endif %}
+            {% if av.alternative.premium_comparison %}
+            <div class="alpha-premium">💰 {{ av.alternative.premium_comparison }}</div>
+            {% endif %}
+            {% if av.alternative.additional_risk %}
+            <div class="alpha-risk">⚠️ Risk: {{ av.alternative.additional_risk }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+        <div class="review-verdict">
+            {% if av.opportunity_strength|upper == 'NONE' %}
+            ✅ <strong>Conservative choice is already optimal</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
+            {% else %}
+            🚀 <strong>Aggressive alternative</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
             {% endif %}
         </div>
     </div>
