@@ -1557,30 +1557,44 @@ async def api_create_activity_from_recommendation(request: Request):
                   or source_activity.get("contrarian_view") or {})
             recommendation = sv.get("one_liner", "")
 
-        # Build the new activity payload
-        new_activity = {
-            "activity": activity_data["activity"],
-            "strike": float(activity_data["strike"]),
-            "expiration": activity_data["expiration"],
-            "premium": float(activity_data["premium"]),
-            "reason": activity_data.get("reason",
-                                        f"Created from {source_agent} recommendation"),
-            "confidence": activity_data.get("confidence",
-                                            source_activity.get("confidence", "medium")),
-            "underlying_price": source_activity.get("underlying_price"),
-            "iv": activity_data.get("iv", source_activity.get("iv")),
-            "risk_flags": source_activity.get("risk_flags", []),
-            "is_alert": True,
-            "created_from": {
-                "source_activity_id": source_activity_id,
-                "source_agent": source_agent,
-                "recommendation": recommendation,
-            },
-        }
+        # Clone the source activity, then overlay user edits
+        # Exclude CosmosDB system fields and identity fields (will be reassigned)
+        exclude_keys = {"id", "_rid", "_self", "_etag", "_attachments", "_ts",
+                        "doc_type", "ttl"}
+        new_activity = {k: v for k, v in source_activity.items()
+                        if k not in exclude_keys}
 
-        # Carry forward position_id if present (for monitor agents)
-        if source_activity.get("position_id"):
-            new_activity["position_id"] = source_activity["position_id"]
+        # Strip the recommending agent's view from the clone
+        if source_agent == "supervisor":
+            new_activity.pop("supervisor_view", None)
+            new_activity.pop("contrarian_view", None)
+        elif source_agent == "alpha_advisor":
+            new_activity.pop("alpha_view", None)
+
+        # Apply user overrides
+        new_activity["activity"] = activity_data["activity"]
+        new_activity["strike"] = float(activity_data["strike"])
+        new_activity["expiration"] = activity_data["expiration"]
+        new_activity["premium"] = float(activity_data["premium"])
+        new_activity["is_alert"] = True
+
+        if activity_data.get("confidence"):
+            new_activity["confidence"] = activity_data["confidence"]
+        if activity_data.get("reason"):
+            new_activity["reason"] = activity_data["reason"]
+        if activity_data.get("iv"):
+            new_activity["iv"] = float(activity_data["iv"])
+        if activity_data.get("risk_rating") is not None:
+            try:
+                new_activity["risk_rating"] = int(activity_data["risk_rating"])
+            except (ValueError, TypeError):
+                pass
+
+        new_activity["created_from"] = {
+            "source_activity_id": source_activity_id,
+            "source_agent": source_agent,
+            "recommendation": recommendation,
+        }
 
         doc = cosmos.write_activity(symbol, agent_type, new_activity)
         return JSONResponse(_clean_doc(doc), status_code=201)

@@ -306,6 +306,10 @@
                     <label for="recIV">IV (%)</label>
                     <input type="number" id="recIV" step="0.1" min="0" />
                 </div>
+                <div class="modal-field">
+                    <label for="recRiskRating">Risk Rating (1-10)</label>
+                    <input type="number" id="recRiskRating" step="1" min="1" max="10" />
+                </div>
             </div>
 
             <div class="modal-field" style="margin-top:0.75rem;">
@@ -387,6 +391,7 @@ function openRecommendationModal(sourceAgent) {
     document.getElementById('recExpiration').value = activityData.expiration || activityData.new_expiration || activityData.current_expiration || '';
     document.getElementById('recPremium').value = activityData.premium || '';
     document.getElementById('recIV').value = activityData.iv || '';
+    document.getElementById('recRiskRating').value = activityData.risk_rating || '';
     document.getElementById('recReason').value = '';
     document.getElementById('recMsg').style.display = 'none';
     document.getElementById('btnSubmitRec').disabled = false;
@@ -428,6 +433,7 @@ async function submitRecommendation(e) {
             confidence: document.getElementById('recConfidence').value,
             reason: document.getElementById('recReason').value || undefined,
             iv: document.getElementById('recIV').value || undefined,
+            risk_rating: document.getElementById('recRiskRating').value || undefined,
         }
     };
 
