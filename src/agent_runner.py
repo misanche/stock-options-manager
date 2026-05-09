@@ -707,23 +707,25 @@ Provide your supervisor audit in the JSON format specified above."""
                 except json.JSONDecodeError:
                     continue
 
-            if supervisor_data is None:
-                for match in re.finditer(r'\{[^{}]*"challenge_strength"\s*:', response_text):
-                    start = match.start()
-                    depth = 0
-                    for i in range(start, len(response_text)):
-                        if response_text[i] == '{':
-                            depth += 1
-                        elif response_text[i] == '}':
-                            depth -= 1
-                            if depth == 0:
-                                try:
-                                    supervisor_data = json.loads(response_text[start:i + 1])
-                                except json.JSONDecodeError:
-                                    pass
-                                break
-                    if supervisor_data is not None:
-                        break
+            if supervisor_data is None and '"challenge_strength"' in response_text:
+                for i in range(len(response_text)):
+                    if response_text[i] == '{':
+                        depth = 0
+                        for j in range(i, len(response_text)):
+                            if response_text[j] == '{':
+                                depth += 1
+                            elif response_text[j] == '}':
+                                depth -= 1
+                                if depth == 0:
+                                    try:
+                                        parsed = json.loads(response_text[i:j + 1])
+                                        if "challenge_strength" in parsed:
+                                            supervisor_data = parsed
+                                    except json.JSONDecodeError:
+                                        pass
+                                    break
+                        if supervisor_data is not None:
+                            break
 
             if supervisor_data is None:
                 logger.warning("Supervisor returned no parseable JSON")
@@ -827,23 +829,25 @@ Provide your alpha advisor analysis in the JSON format specified above."""
                 except json.JSONDecodeError:
                     continue
 
-            if alpha_data is None:
-                for match in re.finditer(r'\{[^{}]*"opportunity_strength"\s*:', response_text):
-                    start = match.start()
-                    depth = 0
-                    for i in range(start, len(response_text)):
-                        if response_text[i] == '{':
-                            depth += 1
-                        elif response_text[i] == '}':
-                            depth -= 1
-                            if depth == 0:
-                                try:
-                                    alpha_data = json.loads(response_text[start:i + 1])
-                                except json.JSONDecodeError:
-                                    pass
-                                break
-                    if alpha_data is not None:
-                        break
+            if alpha_data is None and '"opportunity_strength"' in response_text:
+                for i in range(len(response_text)):
+                    if response_text[i] == '{':
+                        depth = 0
+                        for j in range(i, len(response_text)):
+                            if response_text[j] == '{':
+                                depth += 1
+                            elif response_text[j] == '}':
+                                depth -= 1
+                                if depth == 0:
+                                    try:
+                                        parsed = json.loads(response_text[i:j + 1])
+                                        if "opportunity_strength" in parsed:
+                                            alpha_data = parsed
+                                    except json.JSONDecodeError:
+                                        pass
+                                    break
+                        if alpha_data is not None:
+                            break
 
             if alpha_data is None:
                 logger.warning("Alpha Advisor returned no parseable JSON")
