@@ -643,3 +643,12 @@ Only MODERATE and STRONG contrarian challenges appear in Telegram alerts. WEAK c
 
 ### Prolonged WAIT Contrarian Detection
 When a position accumulates 5+ consecutive WAIT decisions (no alerts, no errors in between), the contrarian agent is now triggered even though `is_alert=False`. This catches capital-efficiency blind spots — theta stagnation, opportunity cost of idle positions. The threshold is a class constant (`PROLONGED_WAIT_THRESHOLD = 5`). Detection uses `get_recent_activities(include_alerts=True)` to see the full picture; if ANY alert or error exists in the window, it's not a prolonged WAIT. Telegram alerts use a dedicated format (`send_prolonged_wait_alert`) only for MODERATE/STRONG contrarian challenges.
+
+### Unified Contrarian + Alert as Single Telegram Message
+User preference: one notification per alert, not two. Contrarian review now runs BEFORE the Telegram send. Pipeline: Decision → CosmosDB write → Contrarian review → add `contrarian_view` to `alert_data` → single Telegram send. If contrarian fails (returns None), the alert sends without it — never blocks the notification. `send_contrarian_followup()` removed; MODERATE/STRONG one-liners are appended inline to `_format_sell_alert()` and `_format_roll_alert()`. WEAK contrarian is stored in CosmosDB but omitted from Telegram. The ~15-30s contrarian delay before notification is acceptable since agents run every few hours.
+
+### Cosmos replace_item Consistency
+All `container.replace_item()` calls in `cosmos_db.py` now use named arguments (`item=doc["id"], body=doc`) instead of positional `(doc, doc)`. Consistent calling convention reduces confusion about which arg is the item identifier vs. the body.
+
+### Delete Activity Feature
+Added `delete_activity(activity_id, symbol)` to CosmosDB client — simple single-document delete using partition key. API endpoint `DELETE /api/activities/{activity_id}` fetches the activity first to resolve the symbol (partition key), then deletes. The delete button is ONLY on the activity detail page (`activity_detail.html`), styled as `btn btn-danger` (red), with a confirmation dialog. On success, redirects to `/symbols/{symbol}`. Added full-size `.btn-danger` CSS since only `.btn-sm.btn-danger` existed before.
