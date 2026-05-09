@@ -731,11 +731,18 @@ Provide your supervisor audit in the JSON format specified above."""
                 logger.warning("Supervisor returned no parseable JSON")
                 return None
 
-            required = {"challenge_strength", "counter_arguments", "net_assessment", "one_liner"}
+            required = {"challenge_strength", "counter_arguments", "net_assessment"}
             missing = required - set(supervisor_data.keys())
             if missing:
                 logger.warning("Supervisor JSON missing fields: %s", missing)
                 return None
+
+            # Derive one_liner if the LLM omitted it
+            if "one_liner" not in supervisor_data:
+                supervisor_data["one_liner"] = str(
+                    supervisor_data.get("net_assessment", "See audit details")
+                )[:120]
+                logger.info("Supervisor: derived one_liner from net_assessment")
 
             strength = str(supervisor_data.get("challenge_strength", "")).upper()
             if strength not in ("WEAK", "MODERATE", "STRONG"):
@@ -853,11 +860,19 @@ Provide your alpha advisor analysis in the JSON format specified above."""
                 logger.warning("Alpha Advisor returned no parseable JSON")
                 return None
 
-            required = {"opportunity_strength", "alternative", "one_liner"}
+            required = {"opportunity_strength", "alternative"}
             missing = required - set(alpha_data.keys())
             if missing:
                 logger.warning("Alpha Advisor JSON missing fields: %s", missing)
                 return None
+
+            # Derive one_liner if the LLM omitted it
+            if "one_liner" not in alpha_data:
+                alt = alpha_data.get("alternative", {})
+                alpha_data["one_liner"] = str(
+                    alt.get("action", "See alternative details")
+                )[:120]
+                logger.info("Alpha Advisor: derived one_liner from alternative.action")
 
             strength = str(alpha_data.get("opportunity_strength", "")).upper()
             if strength not in ("NONE", "MODERATE", "STRONG"):
