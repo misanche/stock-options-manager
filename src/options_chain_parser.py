@@ -73,6 +73,10 @@ DATA INTEGRITY (MANDATORY):
   from a contract in this JSON data. NEVER estimate, interpolate, round, or fabricate prices.
   State the full path and value: e.g., calls["20260427"]["475.0"]["ask"] = 3.00
   If the key path does not exist in the chain, state "contract not found in chain" — do NOT invent a price.
+
+  ⚠️ COMMON ERROR: When looking up a contract, ensure the expiration key (YYYYMMDD) matches
+  your intended expiration date. The chain contains MULTIPLE expirations — do NOT accidentally
+  read the bid/ask from a different expiration's entry for the same strike.
 """
 
 # Canonical field names we expose on each contract

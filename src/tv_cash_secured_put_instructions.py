@@ -1030,9 +1030,16 @@ Also append this flag line after the SUMMARY for easy detection:
 7. **Institutional/Insider Sentiment** (ownership trends, insider activity)
 8. **Risk Rating** (score each of the 5 dimensions with brief justification)
 9. **Activity Rationale** (why SELL or WAIT)
-10. **JSON Activity Block** (required structured format above)
-11. **SUMMARY Line** (required human-readable line above)
-12. **Clear Sell Alert Flag** (if applicable)
+10. **Premium Cross-Verification** (MANDATORY for SELL decisions):
+   Before writing the JSON block, explicitly state the full chain lookup path for EVERY price you cite:
+   - Format: `{option_type}["{expiration_YYYYMMDD}"]["{strike}"]["bid"] = {value}`
+   - Example: `puts["20260613"]["95.0"]["bid"] = 3.45`
+   - ⛔ VERIFY: The expiration key (e.g., "20260613") MUST match your recommended expiration date (e.g., 2026-06-13). If they don't match, you looked up the wrong contract — go back and find the correct one.
+   - ⛔ VERIFY: The strike key (e.g., "95.0") MUST match your recommended strike.
+   - If you cannot find the exact key path in the chain data, state "contract not found" — do NOT estimate.
+11. **JSON Activity Block** (required structured format above)
+12. **SUMMARY Line** (required human-readable line above)
+13. **Clear Sell Alert Flag** (if applicable)
 
 ---
 

@@ -200,6 +200,18 @@ All other flags (position, earnings, calendar, technical, fundamental) come from
 
 Write a user-facing reason that summarizes WHY the roll is needed (from Agent 1's context — paraphrase, do not copy verbatim) followed by your roll economics details. Do NOT reference "Agent 1" or "Agent 2" in the reason — it is displayed directly to the user.
 
+### Premium Cross-Verification (MANDATORY for all ROLL decisions)
+
+Before writing the JSON block, explicitly state the full chain lookup path for EVERY price you cite:
+- Format: `{option_type}["{expiration_YYYYMMDD}"]["{strike}"]["bid"] = {value}` (for new position)
+- Format: `{option_type}["{expiration_YYYYMMDD}"]["{strike}"]["ask"] = {value}` (for buyback)
+- Example buyback: `calls["20260530"]["72.0"]["ask"] = 3.20`
+- Example new position: `calls["20260613"]["75.0"]["bid"] = 4.50`
+- ⛔ VERIFY: The expiration key (e.g., "20260613") MUST match your recommended new expiration date (e.g., 2026-06-13). If they don't match, you looked up the wrong contract — go back and find the correct one.
+- ⛔ VERIFY: The strike key (e.g., "75.0") MUST match your recommended new strike.
+- For roll operations, verify BOTH the buyback path (ask) AND the new position path (bid).
+- If you cannot find the exact key path in the chain data, state "contract not found" — do NOT estimate.
+
 ### Final Activity JSON Schema (open_call_monitor)
 
 ⛔ MANDATORY FOR ALL ROLL ACTIONS: You MUST set `new_strike` and `new_expiration` to specific values from the candidates table.

@@ -757,9 +757,16 @@ Also append this flag line after the SUMMARY for easy detection:
 5. **Greeks Analysis** (delta, theta, vega for target strikes)
 6. **Risk Rating** (score each of the 5 dimensions with brief justification)
 7. **Activity Rationale** (why SELL or WAIT)
-8. **JSON Activity Block** (required structured format above)
-9. **SUMMARY Line** (required human-readable line above)
-10. **Clear Sell Alert Flag** (if applicable)
+8. **Premium Cross-Verification** (MANDATORY for SELL decisions):
+   Before writing the JSON block, explicitly state the full chain lookup path for EVERY price you cite:
+   - Format: `{option_type}["{expiration_YYYYMMDD}"]["{strike}"]["bid"] = {value}`
+   - Example: `calls["20260613"]["185.0"]["bid"] = 2.80`
+   - ⛔ VERIFY: The expiration key (e.g., "20260613") MUST match your recommended expiration date (e.g., 2026-06-13). If they don't match, you looked up the wrong contract — go back and find the correct one.
+   - ⛔ VERIFY: The strike key (e.g., "185.0") MUST match your recommended strike.
+   - If you cannot find the exact key path in the chain data, state "contract not found" — do NOT estimate.
+9. **JSON Activity Block** (required structured format above)
+10. **SUMMARY Line** (required human-readable line above)
+11. **Clear Sell Alert Flag** (if applicable)
 
 ---
 
