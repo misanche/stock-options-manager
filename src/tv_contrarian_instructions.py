@@ -278,7 +278,7 @@ Check these potential issues (flag only genuine findings, max 3):
 6. **DTE considerations:** "Selected expiration at N DTE may not
    optimise theta — closer or farther might be better."
 7. **Data accuracy:** "Verify the premium of $X matches
-   {puts|calls}['{expiration}']['{strike}']['bid'] in the chain —
+   {{puts|calls}}['{{expiration}}']['{{strike}}']['bid'] in the chain —
    premiums from wrong expirations are a known error pattern."
 """,
 
@@ -485,7 +485,7 @@ worse than useless.
    - Did the primary agent read the numbers correctly?
    - **⛔ PREMIUM-EXPIRATION MATCH (critical):** If the agent recommends a strike
      and expiration, verify the premium (bid) was taken from the CORRECT expiration
-     key in the chain. Look up: {puts|calls}["{YYYYMMDD}"]["{strike}"]["bid"] where
+     key in the chain. Look up: {{puts|calls}}["{{YYYYMMDD}}"]["{{strike}}"]["bid"] where
      YYYYMMDD matches the recommended expiration. If the premium doesn't match that
      path, this is a STRONG finding — the agent read from the wrong expiration.
    - Are premium yield, delta, DTE calculations accurate?
