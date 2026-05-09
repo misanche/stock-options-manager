@@ -1472,3 +1472,11 @@ This orchestration event consolidates all pending team decisions from 2026-04-23
   - Added "Data accuracy" check item to all 5 ROLL playbooks (ROLL_UP, ROLL_DOWN, ROLL_UP_AND_OUT, ROLL_DOWN_AND_OUT, ROLL_OUT)
 - **Key insight**: The contrarian already receives the full options chain data in its context, so it CAN verify the chain path — it just wasn't being told to. This is a zero-cost improvement that catches a real data-read bug pattern.
 - **Files Modified**: `src/tv_contrarian_instructions.py`
+
+### Premium Cross-Verification Bug Fix (2026-07)
+- Bug: CSP watcher (and potentially all agents) reported premium (bid) from the CORRECT strike but WRONG expiration — specifically the last expiration in the chain. Root cause: LLM reads multi-expiration JSON and gets confused about which expiration key it's reading from.
+- Fix: Added a mandatory "Premium Cross-Verification" step to the RESPONSE STRUCTURE of all 4 watcher/roll instruction files, positioned immediately before the JSON output step. The step forces the agent to explicitly cite the full JSON path (e.g., `puts["20260613"]["95.0"]["bid"] = 3.45`) and verify the expiration key matches the recommended date.
+- Also added a `⚠️ COMMON ERROR` warning to `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` in `options_chain_parser.py` — this is injected into every agent's context at runtime, so all agents see it.
+- Added lighter-weight verification guidance to both chat instruction files (`tv_open_call_chat_instructions.py`, `tv_open_put_chat_instructions.py`).
+- **Files Modified**: `options_chain_parser.py`, `tv_cash_secured_put_instructions.py`, `tv_covered_call_instructions.py`, `tv_open_call_roll_instructions.py`, `tv_open_put_roll_instructions.py`, `tv_open_call_chat_instructions.py`, `tv_open_put_chat_instructions.py`
+- **Key pattern**: When an LLM reads a nested dict keyed by multiple dimensions (expiration → strike → contract), it can silently cross dimensions. The fix is to require citing the full key path as a mandatory response step — making the lookup explicit forces the model to self-check.
