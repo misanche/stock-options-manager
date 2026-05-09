@@ -21,6 +21,17 @@
         ⚠️ This analysis was performed with partial data — some TradingView resources returned 403.
     </div>
     {% endif %}
+    {% if activity.created_from %}
+    <div class="created-from-banner">
+        📎 Created from
+        {% if activity.created_from.source_agent == 'alpha_advisor' %}Alpha Advisor{% else %}Supervisor{% endif %}
+        recommendation on
+        <a href="/activities/{{ activity.created_from.source_activity_id }}">original activity</a>
+        {% if activity.created_from.recommendation %}
+        — <em>{{ activity.created_from.recommendation[:100] }}</em>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- Activity card -->
@@ -183,6 +194,13 @@
             ✅ <strong>Original decision holds</strong>{% if sv.one_liner %} — <em>{{ sv.one_liner }}</em>{% endif %}
             {% endif %}
         </div>
+        {% if sv.net_assessment|upper == 'RECONSIDER' %}
+        <div class="review-action">
+            <button class="btn btn-primary btn-sm" onclick="openRecommendationModal('supervisor')">
+                📝 Apply Recommendation
+            </button>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -228,9 +246,86 @@
             🚀 <strong>Aggressive alternative</strong>{% if av.one_liner %} — <em>{{ av.one_liner }}</em>{% endif %}
             {% endif %}
         </div>
+        {% if av.opportunity_strength|upper in ('STRONG', 'MODERATE') %}
+        <div class="review-action">
+            <button class="btn btn-primary btn-sm" onclick="openRecommendationModal('alpha_advisor')">
+                📝 Apply Recommendation
+            </button>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
+
+<!-- Recommendation Modal -->
+<div class="modal-overlay" id="recommendationModal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">Apply Recommendation</h3>
+            <button class="modal-close" onclick="closeRecommendationModal()">&times;</button>
+        </div>
+
+        <div class="modal-recommendation" id="modalRecommendation"></div>
+
+        <form id="recommendationForm" onsubmit="submitRecommendation(event)">
+            <input type="hidden" id="recSourceAgent" />
+
+            <div class="modal-grid">
+                <div class="modal-field">
+                    <label for="recActivity">Action</label>
+                    <select id="recActivity" required>
+                        <option value="SELL">SELL</option>
+                        <option value="ROLL_OUT">ROLL OUT</option>
+                        <option value="ROLL_UP">ROLL UP</option>
+                        <option value="ROLL_DOWN">ROLL DOWN</option>
+                        <option value="ROLL_UP_AND_OUT">ROLL UP & OUT</option>
+                        <option value="ROLL_DOWN_AND_OUT">ROLL DOWN & OUT</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="recConfidence">Confidence</label>
+                    <select id="recConfidence">
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="recStrike">Strike ($)</label>
+                    <input type="number" id="recStrike" step="0.5" min="0" required />
+                </div>
+                <div class="modal-field">
+                    <label for="recExpiration">Expiration</label>
+                    <input type="date" id="recExpiration" required />
+                </div>
+                <div class="modal-field">
+                    <label for="recPremium">Premium ($)</label>
+                    <input type="number" id="recPremium" step="0.01" min="0" required />
+                </div>
+                <div class="modal-field">
+                    <label for="recIV">IV (%)</label>
+                    <input type="number" id="recIV" step="0.1" min="0" />
+                </div>
+            </div>
+
+            <div class="modal-field" style="margin-top:0.75rem;">
+                <label for="recReason">Reason</label>
+                <textarea id="recReason" rows="3" placeholder="Why are you applying this recommendation?"></textarea>
+            </div>
+
+            <div class="modal-source-info">
+                📎 This activity will be linked to the original (<code>{{ activity.id }}</code>) via
+                <span id="modalSourceLabel">the recommending agent</span>.
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn" onclick="closeRecommendationModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitRec">Create Activity</button>
+            </div>
+            <div id="recMsg" style="display:none; margin-top:0.5rem; font-size:0.9rem;"></div>
+        </form>
+    </div>
+</div>
 
 <!-- Delete activity -->
 <div style="margin:1.5rem 0; display:flex; align-items:center; gap:1rem;">
@@ -249,6 +344,124 @@
 
 {% block scripts %}
 <script>
+// ── Recommendation Modal ──
+var activityData = {{ activity | tojson }};
+
+function openRecommendationModal(sourceAgent) {
+    var modal = document.getElementById('recommendationModal');
+    document.getElementById('recSourceAgent').value = sourceAgent;
+
+    // Set title and source label
+    var agentLabel = sourceAgent === 'alpha_advisor' ? 'Alpha Advisor' : 'Supervisor';
+    document.getElementById('modalTitle').textContent = 'Apply ' + agentLabel + ' Recommendation';
+    document.getElementById('modalSourceLabel').textContent = agentLabel;
+
+    // Show recommendation text
+    var recEl = document.getElementById('modalRecommendation');
+    var recText = '';
+    if (sourceAgent === 'alpha_advisor' && activityData.alpha_view) {
+        var av = activityData.alpha_view;
+        if (av.alternative && av.alternative.action) recText += '→ ' + av.alternative.action;
+        if (av.alternative && av.alternative.premium_comparison) recText += '\n💰 ' + av.alternative.premium_comparison;
+        if (av.alternative && av.alternative.rationale) recText += '\n📊 ' + av.alternative.rationale;
+    } else if (sourceAgent === 'supervisor') {
+        var sv = activityData.supervisor_view || activityData.contrarian_view || {};
+        if (sv.one_liner) recText += '⚠️ ' + sv.one_liner;
+        if (sv.counter_arguments) {
+            sv.counter_arguments.forEach(function(arg) {
+                recText += '\n• ' + arg.point;
+            });
+        }
+    }
+    recEl.textContent = recText || 'No recommendation details available.';
+
+    // Pre-fill form with original activity data
+    var act = activityData.activity || 'SELL';
+    var sel = document.getElementById('recActivity');
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === act) { sel.selectedIndex = i; break; }
+    }
+
+    document.getElementById('recConfidence').value = activityData.confidence || 'medium';
+    document.getElementById('recStrike').value = activityData.strike || activityData.new_strike || activityData.current_strike || '';
+    document.getElementById('recExpiration').value = activityData.expiration || activityData.new_expiration || activityData.current_expiration || '';
+    document.getElementById('recPremium').value = activityData.premium || '';
+    document.getElementById('recIV').value = activityData.iv || '';
+    document.getElementById('recReason').value = '';
+    document.getElementById('recMsg').style.display = 'none';
+    document.getElementById('btnSubmitRec').disabled = false;
+    document.getElementById('btnSubmitRec').textContent = 'Create Activity';
+
+    modal.style.display = 'flex';
+}
+
+function closeRecommendationModal() {
+    document.getElementById('recommendationModal').style.display = 'none';
+}
+
+// Close on overlay click
+document.getElementById('recommendationModal').addEventListener('click', function(e) {
+    if (e.target === this) closeRecommendationModal();
+});
+
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeRecommendationModal();
+});
+
+async function submitRecommendation(e) {
+    e.preventDefault();
+    var btn = document.getElementById('btnSubmitRec');
+    var msgEl = document.getElementById('recMsg');
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    msgEl.style.display = 'none';
+
+    var payload = {
+        source_activity_id: activityData.id,
+        source_agent: document.getElementById('recSourceAgent').value,
+        activity_data: {
+            activity: document.getElementById('recActivity').value,
+            strike: document.getElementById('recStrike').value,
+            expiration: document.getElementById('recExpiration').value,
+            premium: document.getElementById('recPremium').value,
+            confidence: document.getElementById('recConfidence').value,
+            reason: document.getElementById('recReason').value || undefined,
+            iv: document.getElementById('recIV').value || undefined,
+        }
+    };
+
+    try {
+        var res = await fetch('/api/activities/from-recommendation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        var data = await res.json();
+        if (!res.ok) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#e23b4a';
+            msgEl.textContent = data.error || 'Failed to create activity.';
+            btn.disabled = false;
+            btn.textContent = 'Create Activity';
+        } else {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#00a87e';
+            msgEl.textContent = '✓ Activity created! Redirecting…';
+            setTimeout(function() {
+                window.location.href = '/activities/' + data.id;
+            }, 1000);
+        }
+    } catch(err) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#e23b4a';
+        msgEl.textContent = 'Network error: ' + err.message;
+        btn.disabled = false;
+        btn.textContent = 'Create Activity';
+    }
+}
+
+// ── Delete Activity ──
 (function() {
     var btnDel = document.getElementById('btnDeleteActivity');
     var delMsg = document.getElementById('deleteMsg');

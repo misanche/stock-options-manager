@@ -1498,6 +1498,102 @@ async def cache_clear(request: Request):
     return JSONResponse({"cleared": "all"})
 
 # ===========================================================================
+# REST API — Create Activity from Recommendation
+# ===========================================================================
+
+@app.post("/api/activities/from-recommendation")
+async def api_create_activity_from_recommendation(request: Request):
+    """Create a new activity based on a supervisor or alpha agent recommendation.
+
+    The user validates and edits all fields before submitting.
+    The new activity is linked back to the source activity.
+    """
+    try:
+        cosmos = _get_cosmos(request)
+        body = await request.json()
+
+        source_activity_id = body.get("source_activity_id")
+        source_agent = body.get("source_agent")  # "supervisor" or "alpha_advisor"
+        activity_data = body.get("activity_data", {})
+
+        if not source_activity_id or not source_agent:
+            return JSONResponse(
+                {"error": "source_activity_id and source_agent are required"},
+                status_code=400,
+            )
+        if source_agent not in ("supervisor", "alpha_advisor"):
+            return JSONResponse(
+                {"error": "source_agent must be 'supervisor' or 'alpha_advisor'"},
+                status_code=400,
+            )
+
+        # Validate required fields
+        required = ["activity", "strike", "expiration", "premium"]
+        missing = [f for f in required if not activity_data.get(f)]
+        if missing:
+            return JSONResponse(
+                {"error": f"Missing required fields: {', '.join(missing)}"},
+                status_code=400,
+            )
+
+        source_activity = cosmos.get_activity_by_id(source_activity_id)
+        if source_activity is None:
+            return JSONResponse(
+                {"error": f"Source activity {source_activity_id} not found"},
+                status_code=404,
+            )
+
+        symbol = source_activity["symbol"]
+        agent_type = source_activity["agent_type"]
+
+        # Build recommendation text from the source agent's view
+        recommendation = ""
+        if source_agent == "alpha_advisor" and source_activity.get("alpha_view"):
+            av = source_activity["alpha_view"]
+            recommendation = (av.get("alternative", {}).get("action", "")
+                              or av.get("one_liner", ""))
+        elif source_agent == "supervisor":
+            sv = (source_activity.get("supervisor_view")
+                  or source_activity.get("contrarian_view") or {})
+            recommendation = sv.get("one_liner", "")
+
+        # Build the new activity payload
+        new_activity = {
+            "activity": activity_data["activity"],
+            "strike": float(activity_data["strike"]),
+            "expiration": activity_data["expiration"],
+            "premium": float(activity_data["premium"]),
+            "reason": activity_data.get("reason",
+                                        f"Created from {source_agent} recommendation"),
+            "confidence": activity_data.get("confidence",
+                                            source_activity.get("confidence", "medium")),
+            "underlying_price": source_activity.get("underlying_price"),
+            "iv": activity_data.get("iv", source_activity.get("iv")),
+            "risk_flags": source_activity.get("risk_flags", []),
+            "is_alert": True,
+            "created_from": {
+                "source_activity_id": source_activity_id,
+                "source_agent": source_agent,
+                "recommendation": recommendation,
+            },
+        }
+
+        # Carry forward position_id if present (for monitor agents)
+        if source_activity.get("position_id"):
+            new_activity["position_id"] = source_activity["position_id"]
+
+        doc = cosmos.write_activity(symbol, agent_type, new_activity)
+        return JSONResponse(_clean_doc(doc), status_code=201)
+
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ===========================================================================
 # REST API — Activity Delete
 # ===========================================================================
 
