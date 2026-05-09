@@ -1447,3 +1447,28 @@ This orchestration event consolidates all pending team decisions from 2026-04-23
 - **Commit**: 8cdfb99
 - **Key insight**: Early filtering on immutable characteristics (call vs put) streamlines downstream processing and reduces token overhead in later stages
 
+
+### Contrarian Agent Refactor: Devil's Advocate → Quality Auditor (2026-07)
+- **Problem**: Contrarian agent was too adversarial — manufactured objections even when the original decision was clearly correct. Real example: flagged >3% CSP premium yield as "low" when 3% is outstanding.
+- **Root cause**: Core instruction said "ALWAYS argue the opposite" — LLM complied literally, inventing problems when none existed.
+- **Solution**: Reframed the entire agent from "devil's advocate" to "quality auditor":
+  - Role: "Options Strategy Contrarian — Devil's Advocate" → "Options Strategy Auditor — Quality Check"
+  - Mission: "Argue the OPPOSITE position" → "Audit the quality of this decision"
+  - Rule #1: "ALWAYS argue the opposite" → "Challenge ONLY when you find genuine issues"
+  - All 9 playbooks: changed framing from adversarial to audit checklist
+  - Added premium yield benchmarks (CSP >1.5%/mo good, CC >1%/mo good) to SELL playbook and anti-noise rules
+  - Added Rule #9: validate data interpretation before looking for risks
+  - WEAK outcome explicitly described as "the BEST and MOST VALUABLE outcome"
+- **Key insight**: When an LLM is told to "always argue the opposite," it will manufacture arguments even against correct decisions. Reframing as "audit" with explicit permission to say "everything looks good" produces much higher signal-to-noise.
+- **Files Modified**: `src/tv_contrarian_instructions.py`
+- **Commit**: 305f33b
+
+
+### Premium-Expiration Cross-Verification in Contrarian (2025-07)
+- **Problem**: Primary agents sometimes read the bid/premium from the WRONG expiration date in the options chain — e.g., picking a bid from the last expiration instead of the recommended one.
+- **Solution**: Added explicit premium-expiration cross-verification to the contrarian auditor:
+  - Enhanced Rule #9 with a ⛔ PREMIUM-EXPIRATION MATCH critical check — instructs contrarian to verify `{puts|calls}["{YYYYMMDD}"]["{strike}"]["bid"]` matches the recommended expiration
+  - Added "Data accuracy" check item #7 to the SELL playbook
+  - Added "Data accuracy" check item to all 5 ROLL playbooks (ROLL_UP, ROLL_DOWN, ROLL_UP_AND_OUT, ROLL_DOWN_AND_OUT, ROLL_OUT)
+- **Key insight**: The contrarian already receives the full options chain data in its context, so it CAN verify the chain path — it just wasn't being told to. This is a zero-cost improvement that catches a real data-read bug pattern.
+- **Files Modified**: `src/tv_contrarian_instructions.py`

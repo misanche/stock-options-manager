@@ -122,6 +122,9 @@ Check these potential issues (flag only genuine findings, max 3):
 4. **Time decay advantage:** "With only N DTE left, theta is
    accelerating — waiting a few more days could let the call expire
    worthless."
+5. **Data accuracy:** "Verify buyback cost and new premium match the
+   correct expiration keys in the chain — cross-expiration mix-ups
+   are a known error pattern."
 """,
 
     "ROLL_DOWN": """\
@@ -141,6 +144,9 @@ Check these potential issues (flag only genuine findings, max 3):
    the move down may be exhausted."
 4. **Earnings catalyst:** "Earnings in N days could reverse the trend —
    rolling down now may be premature."
+5. **Data accuracy:** "Verify buyback cost and new premium match the
+   correct expiration keys in the chain — cross-expiration mix-ups
+   are a known error pattern."
 """,
 
     "ROLL_UP_AND_OUT": """\
@@ -164,6 +170,9 @@ Check these potential issues (flag only genuine findings, max 3):
    entirely."
 5. **45 DTE cap:** "The new expiration is close to the 45 DTE maximum —
    is there enough theta runway?"
+6. **Data accuracy:** "Verify buyback cost and new premium match the
+   correct expiration keys in the chain — cross-expiration mix-ups
+   are a known error pattern."
 """,
 
     "ROLL_DOWN_AND_OUT": """\
@@ -185,6 +194,9 @@ Check these potential issues (flag only genuine findings, max 3):
    limited theta advantage."
 5. **Oversold reversal:** "Momentum indicators suggest the selling
    pressure may be exhausting."
+6. **Data accuracy:** "Verify buyback cost and new premium match the
+   correct expiration keys in the chain — cross-expiration mix-ups
+   are a known error pattern."
 """,
 
     "ROLL_OUT": """\
@@ -206,6 +218,9 @@ Check these potential issues (flag only genuine findings, max 3):
    plan."
 4. **45 DTE cap:** "Verify the new expiration doesn't exceed the
    45 DTE maximum."
+5. **Data accuracy:** "Verify buyback cost and new premium match the
+   correct expiration keys in the chain — cross-expiration mix-ups
+   are a known error pattern."
 """,
 
     "CLOSE": """\
@@ -262,6 +277,9 @@ Check these potential issues (flag only genuine findings, max 3):
    thresholds.
 6. **DTE considerations:** "Selected expiration at N DTE may not
    optimise theta — closer or farther might be better."
+7. **Data accuracy:** "Verify the premium of $X matches
+   {puts|calls}['{expiration}']['{strike}']['bid'] in the chain —
+   premiums from wrong expirations are a known error pattern."
 """,
 
     "NOT_NOW": """\
@@ -465,6 +483,11 @@ worse than useless.
 
 9. **Validate data interpretation first.**  Before looking for risks, verify:
    - Did the primary agent read the numbers correctly?
+   - **⛔ PREMIUM-EXPIRATION MATCH (critical):** If the agent recommends a strike
+     and expiration, verify the premium (bid) was taken from the CORRECT expiration
+     key in the chain. Look up: {puts|calls}["{YYYYMMDD}"]["{strike}"]["bid"] where
+     YYYYMMDD matches the recommended expiration. If the premium doesn't match that
+     path, this is a STRONG finding — the agent read from the wrong expiration.
    - Are premium yield, delta, DTE calculations accurate?
    - Are the technical readings (RSI, oscillators, S/R levels) correct?
    If everything checks out, that's a WEAK finding — and that's good.
