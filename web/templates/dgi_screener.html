@@ -111,6 +111,13 @@
             <button class="modal-close" id="dgiDetailClose">&times;</button>
         </div>
         <div id="dgiDetailBody"></div>
+        <div id="dgiScoreChartContainer" style="margin:1rem 1.25rem 1.25rem;">
+            <h4 style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">Score Evolution</h4>
+            <div id="dgiScoreChartWrap" style="background:var(--bg-input);border-radius:var(--radius);padding:0.75rem 1rem;">
+                <canvas id="dgiScoreChart" height="200"></canvas>
+                <p id="dgiScoreChartEmpty" style="display:none;color:var(--text-muted);text-align:center;font-size:0.9rem;margin:1rem 0;">Score history will appear after multiple screener runs</p>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -122,8 +129,10 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 (function() {
+    var _scoreChart = null;
     /* ── Filter Panel Toggle & Logic ── */
     window.toggleFilters = function() {
         var panel = document.getElementById('filterPanel');
@@ -335,6 +344,59 @@
         if (entry.metrics) html += buildSection('Fundamentals', entry.metrics);
         if (entry.technicals) html += buildSection('Technical Timing', entry.technicals);
         modalBody.innerHTML = html;
+
+        // Score evolution chart
+        var chartCanvas = document.getElementById('dgiScoreChart');
+        var chartEmpty = document.getElementById('dgiScoreChartEmpty');
+        var history = entry.score_history || [];
+
+        if (_scoreChart) { _scoreChart.destroy(); _scoreChart = null; }
+
+        if (history.length > 1) {
+            chartCanvas.style.display = 'block';
+            chartEmpty.style.display = 'none';
+            var labels = history.map(function(h) { return h.date; });
+            var data = history.map(function(h) { return h.score; });
+            _scoreChart = new Chart(chartCanvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Quality Score',
+                        data: data,
+                        borderColor: '#60a5fa',
+                        backgroundColor: 'rgba(96,165,250,0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#60a5fa',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#9ca3af', maxTicksLimit: 10, font: { size: 11 } },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: {
+                            min: 0, max: 100,
+                            ticks: { color: '#9ca3af', font: { size: 11 } },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        }
+                    }
+                }
+            });
+        } else {
+            chartCanvas.style.display = 'none';
+            chartEmpty.style.display = 'block';
+        }
+
         modal.style.display = 'flex';
     }
 

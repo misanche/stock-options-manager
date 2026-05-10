@@ -226,15 +226,35 @@ async def run_dgi_screener(config, cosmos) -> dict:
     current_symbols = {e["symbol"] for e in top_entries}
     prev_symbols = set(previous_top20.keys())
 
+    today_str = now.strftime("%Y-%m-%d")
+    MAX_SCORE_HISTORY = 90
+
     for entry in top_entries:
         sym = entry["symbol"]
         if sym in previous_top20:
             prev = previous_top20[sym]
             entry["days_on_list"] = prev.get("days_on_list", 0) + 1
             entry["first_appeared"] = prev.get("first_appeared", run_date)
+
+            # Build score_history: carry forward previous history
+            prev_history = list(prev.get("score_history", []))
+            current_score = entry["quality_score"]
+            last_entry = prev_history[-1] if prev_history else None
+            if (
+                not last_entry
+                or last_entry.get("date") != today_str
+                or last_entry.get("score") != current_score
+            ):
+                # Avoid same-day same-score duplicates
+                if last_entry and last_entry.get("date") == today_str:
+                    prev_history[-1] = {"date": today_str, "score": current_score}
+                else:
+                    prev_history.append({"date": today_str, "score": current_score})
+            entry["score_history"] = prev_history[-MAX_SCORE_HISTORY:]
         else:
             entry["days_on_list"] = 1
             entry["first_appeared"] = run_date
+            entry["score_history"] = [{"date": today_str, "score": entry["quality_score"]}]
             new_symbols.append(sym)
 
     dropped_symbols = list(prev_symbols - current_symbols)
@@ -260,6 +280,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
             "last_updated": run_date,
             "metrics": entry["metrics"],
             "technicals": entry["technicals"],
+            "score_history": entry.get("score_history", []),
             "sector": entry["metrics"].get("sector", ""),
             "exchange": entry["metrics"].get("exchange", ""),
         }
