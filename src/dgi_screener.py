@@ -280,7 +280,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
         ],
         "stats": {
             "total_screened": total_screened,
-            "passed_filters": passed_filters,
+            "total_scored": len(candidates),
             "new_entries": len(new_symbols),
             "dropped": len(dropped_symbols),
             "avg_days_on_list": round(avg_days, 1),
@@ -296,7 +296,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
     summary = {
         "run_date": run_date,
         "total_screened": total_screened,
-        "passed_filters": passed_filters,
+        "total_scored": len(candidates),
         "top_n": len(top_entries),
         "new_entries": new_symbols,
         "dropped": dropped_symbols,
@@ -314,9 +314,9 @@ async def run_dgi_screener(config, cosmos) -> dict:
     }
 
     logger.info(
-        "DGI Screener complete: %d screened, %d passed, %d in top list, "
+        "DGI Screener complete: %d screened, %d scored, %d in top list, "
         "%d new, %d dropped",
-        total_screened, passed_filters, len(top_entries),
+        total_screened, len(candidates), len(top_entries),
         len(new_symbols), len(dropped_symbols),
     )
     return summary
