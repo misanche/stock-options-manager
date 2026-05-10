@@ -497,6 +497,17 @@ Every output MUST include a `risk_rating` (integer 0-10) and a `risk_rating_brea
 - **7-8**: High risk — likely should WAIT
 - **9-10**: Very high risk — definitely WAIT
 
+## PRE-OUTPUT DTE CHECKPOINT
+
+⛔ **STOP — before writing ANY JSON output, perform this mandatory check:**
+1. Look at the `dte` value you are about to output.
+2. If `dte` > 45 and `activity` is "SELL", you MUST change `activity` to "WAIT".
+   - Set `strike`, `expiration`, `dte`, `delta`, `premium`, `premium_pct` to `null`.
+   - Set `waiting_for` to "No expiration within the 45 DTE hard cap meets all criteria."
+   - Add `"dte_exceeded"` to `risk_flags`.
+   - This is non-negotiable. A SELL with DTE > 45 is NEVER valid output.
+3. If `dte` ≤ 45, proceed normally.
+
 ## OUTPUT FORMAT SPECIFICATION
 
 Output a **JSON activity block** inside a fenced code block, followed by a **SUMMARY** line. This enables machine parsing and human readability.

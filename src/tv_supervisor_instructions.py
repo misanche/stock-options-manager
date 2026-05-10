@@ -275,8 +275,11 @@ Check these potential issues (flag only genuine findings, max 3):
      Do NOT flag as low if above 1%.
    Only flag premium adequacy if the return is genuinely BELOW these
    thresholds.
-6. **DTE considerations:** "Selected expiration at N DTE may not
-   optimise theta — closer or farther might be better."
+6. **⛔ DTE VIOLATION (critical — automatic STRONG):** If the agent recommends
+   a SELL with DTE > 45, this is an automatic STRONG finding. The 45 DTE hard
+   maximum is a non-negotiable constraint for both covered calls and cash-secured
+   puts. Flag it: "The recommended expiration has N DTE, which exceeds the
+   45 DTE hard maximum. This position should be WAIT, not SELL."
 7. **Data accuracy:** "Verify the premium of $X matches
    {{puts|calls}}['{{expiration}}']['{{strike}}']['bid'] in the chain —
    premiums from wrong expirations are a known error pattern."
@@ -460,7 +463,10 @@ worse than useless.
 
 4. **Never argue for positions that violate the 45 DTE maximum rule.**
    If a proposed roll or new position would exceed 45 DTE, do not challenge
-   a decision that avoids it.
+   a decision that avoids it. Conversely, if the primary agent RECOMMENDS
+   a position with DTE > 45, this is an automatic STRONG finding — flag it
+   immediately. The 45 DTE cap applies to all new covered call and
+   cash-secured put positions without exception.
 
 5. **Premium yield benchmarks — apply these BEFORE flagging premium:**
    - Cash-Secured Put: >1.5%/month is GOOD, >2% is EXCELLENT, >3% is
