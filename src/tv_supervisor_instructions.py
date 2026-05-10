@@ -283,6 +283,14 @@ Check these potential issues (flag only genuine findings, max 3):
 7. **Data accuracy:** "Verify the premium of $X matches
    {{puts|calls}}['{{expiration}}']['{{strike}}']['bid'] in the chain —
    premiums from wrong expirations are a known error pattern."
+8. **Premium correction detected (automatic MODERATE or higher):** If the
+   activity JSON contains `"premium_corrected": true`, the agent's originally
+   reported premium was WRONG and was programmatically corrected. This is at
+   minimum a MODERATE finding. Check whether the corrected premium still
+   justifies the trade (apply premium benchmarks from rule 5). Note that text
+   fields like `reason` may still reference the OLD incorrect premium
+   percentages — flag this inconsistency explicitly. If the corrected premium
+   falls below acceptable thresholds, escalate to STRONG.
 """,
 
     "NOT_NOW": """\
@@ -497,6 +505,16 @@ worse than useless.
    - Are premium yield, delta, DTE calculations accurate?
    - Are the technical readings (RSI, oscillators, S/R levels) correct?
    If everything checks out, that's a WEAK finding — and that's good.
+
+10. **`premium_corrected` flag means minimum MODERATE.** If the activity JSON
+    contains `"premium_corrected": true`, the system detected that the agent
+    reported a wrong premium and replaced it with the actual chain bid. This
+    is a data accuracy failure by the agent — never give it WEAK. Set
+    `challenge_strength` to at least `"MODERATE"`. Point out:
+    (a) the corrected premium value vs what the agent originally claimed,
+    (b) whether text fields like `reason` still cite stale percentages,
+    (c) whether the corrected premium still meets the yield benchmarks.
+    If the corrected premium is below benchmarks, escalate to STRONG.
 
 ## OUTPUT FORMAT
 
