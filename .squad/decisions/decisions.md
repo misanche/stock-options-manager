@@ -2010,3 +2010,34 @@ Added programmatic post-agent validation step (`_validate_premium_against_chain`
 
 ### Files Changed
 - `src/agent_runner.py` — methods: `_validate_premium_against_chain()`, `_validate_single_premium()`, `_validate_buyback_cost()` plus integration into `run_symbol_agent()` and `run_position_monitor()`
+
+---
+
+## Decision: DGI Screener Bug Fixes
+
+**Date:** 2026-07  
+**Author:** Rusty (Agent Dev)  
+**Status:** Implemented
+
+### Context
+Basher's code review identified 5 critical and 3 moderate bugs in DGI Screener pipeline. All were interface contract mismatches between dgi_screener.py (caller) and dgi_metrics.py / yfinance_fetcher.py (callees), plus missing scheduler integration and config/dependencies.
+
+### Fixes Implemented
+
+1. **`days_on_list` counter starts at 1** 
+   - First day on list = day 1, not 0
+   - More intuitive for user dashboard display
+
+2. **Technical indicator config passed as kwargs**
+   - rsi_period, bb_period, bb_std from config.yaml passed as optional kwargs
+   - Only if present in config; otherwise function defaults apply
+   - Keeps call site forward-compatible for future parameters
+
+3. **DGI scheduler mirrors options_chain pattern**
+   - Follows same init → reschedule → trigger → display flow
+   - Consistency across all scheduler job types
+
+### Team Impact
+- **Danny:** config.yaml now has `dgi_screener` section for filters/weights updates
+- **Linus:** `calculate_quality_score` hardcodes weights internally — config weights NOT passed through; requires signature update if dynamic weights needed
+- **Basher:** All critical/moderate findings resolved; ready for re-review
