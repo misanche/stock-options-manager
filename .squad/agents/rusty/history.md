@@ -667,3 +667,6 @@ Basher (code review) found 5 critical and 3 moderate bugs in the DGI Screener im
 - **M2:** Added `dgi_screener` config section to config.yaml
 - **M3:** `days_on_list` for new entries starts at 1, not 0
 - **Lesson:** Always verify function signatures match call sites across module boundaries, especially when different devs write caller vs callee
+
+### DGI Screener Dashboard Trigger (2026-07)
+Added "Run DGI Screener" button to web dashboard with backing API. Pattern follows the existing trigger-all/full-analysis system but with a separate background runner since `run_dgi_screener(config, cosmos)` has a different signature (no runner/context_provider/symbol). API: `POST /api/trigger/dgi_screener` + `GET /api/trigger/dgi_screener/status`. Uses `_dgi_screener_status` dict on app.state for concurrency guard (409 if already running). Frontend polls status every 3s until done, shows Running→Done✓ states. Green button style (`btn-trigger-green`) distinguishes from blue full-analysis.

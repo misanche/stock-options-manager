@@ -54,6 +54,19 @@ class CosmosDBService:
             )
             self.settings_container = None
 
+        # DGI Screener container — best-effort; never blocks if missing
+        try:
+            self.dgi_screener_container = self.database.get_container_client(
+                "dgi_screener"
+            )
+            self.dgi_screener_container.read()
+        except Exception:
+            logger.warning(
+                "DGI Screener container not found — DGI screener disabled. "
+                "Run scripts/provision_cosmosdb.sh to create it."
+            )
+            self.dgi_screener_container = None
+
     # ── Symbol Config CRUD ─────────────────────────────────────────────
 
     def create_symbol(self, symbol: str, exchange: str,
@@ -1055,3 +1068,69 @@ class CosmosDBService:
             self.settings_container.upsert_item(doc)
         except Exception as exc:
             logger.warning("Failed to update TV health status: %s", exc)
+
+    # ── DGI Screener ──────────────────────────────────────────────────
+
+    def get_dgi_top20(self) -> list[dict]:
+        """Get current DGI top 20 entries from the dgi_screener container."""
+        if self.dgi_screener_container is None:
+            return []
+        try:
+            query = (
+                "SELECT * FROM c WHERE c.doc_type = 'dgi_top20' "
+                "ORDER BY c.rank ASC"
+            )
+            return list(self.dgi_screener_container.query_items(
+                query=query,
+                enable_cross_partition_query=True,
+            ))
+        except Exception as exc:
+            logger.warning("Failed to read DGI top 20: %s", exc)
+            return []
+
+    def upsert_dgi_top20(self, entries: list) -> None:
+        """Upsert each top 20 entry (id: top20_{symbol})."""
+        if self.dgi_screener_container is None:
+            logger.warning("DGI Screener container unavailable — skipping upsert")
+            return
+        for entry in entries:
+            try:
+                self.dgi_screener_container.upsert_item(entry)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to upsert DGI entry %s: %s",
+                    entry.get("symbol", "?"), exc,
+                )
+
+    def delete_dgi_dropped(self, symbols: list) -> None:
+        """Delete entries no longer in the top 20."""
+        if self.dgi_screener_container is None:
+            return
+        for symbol in symbols:
+            try:
+                self.dgi_screener_container.delete_item(
+                    item=f"top20_{symbol}",
+                    partition_key=symbol,
+                )
+            except CosmosResourceNotFoundError:
+                pass
+            except Exception as exc:
+                logger.warning("Failed to delete DGI entry %s: %s", symbol, exc)
+
+    def write_dgi_snapshot(self, snapshot: dict) -> None:
+        """Write a daily snapshot document to the dgi_screener container."""
+        if self.dgi_screener_container is None:
+            logger.warning("DGI Screener container unavailable — skipping snapshot")
+            return
+        try:
+            self.dgi_screener_container.upsert_item(snapshot)
+        except Exception as exc:
+            logger.warning("Failed to write DGI snapshot: %s", exc)
+
+    def is_symbol_watched(self, symbol: str) -> bool:
+        """Check if a symbol exists in the symbols container."""
+        try:
+            doc = self.get_symbol(symbol)
+            return doc is not None
+        except Exception:
+            return False
