@@ -13,19 +13,13 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _load_symbols(seed_file: str) -> list[str]:
-    """Load ticker symbols from seed file (one per line)."""
-    path = PROJECT_ROOT / seed_file
-    if not path.exists():
-        logger.warning("Seed symbols file not found: %s", path)
+def _load_symbols(symbols_str: str) -> list[str]:
+    """Parse ticker symbols from comma-separated config string."""
+    if not symbols_str:
+        logger.warning("No symbols configured for DGI screener")
         return []
-    symbols = []
-    with open(path) as f:
-        for line in f:
-            sym = line.strip().upper()
-            if sym and not sym.startswith("#"):
-                symbols.append(sym)
-    logger.info("Loaded %d symbols from %s", len(symbols), seed_file)
+    symbols = [s.strip().upper() for s in symbols_str.split(",") if s.strip()]
+    logger.info("Loaded %d symbols from config", len(symbols))
     return symbols
 
 
@@ -33,7 +27,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
     """Run the full DGI screening pipeline.
 
     Steps:
-    1. Load S&P 500 list from seed file
+    1. Load symbols from config (comma-separated)
     2. Fetch yfinance data for each symbol
     3. Calculate fundamental + technical metrics
     4. Apply minimum filters
@@ -51,7 +45,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
     from . import dgi_metrics
 
     dgi_config = config.config.get("dgi_screener", {})
-    seed_file = dgi_config.get("seed_symbols_file", "data/sp500_symbols.txt")
+    symbols_str = dgi_config.get("symbols", "")
     top_n = dgi_config.get("top_n", 20)
     filters = dgi_config.get("filters", {})
     tech_config = dgi_config.get("technical_indicators", {})
@@ -60,8 +54,8 @@ async def run_dgi_screener(config, cosmos) -> dict:
     now = datetime.now(timezone.utc)
     run_date = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 1. Load symbols
-    symbols = _load_symbols(seed_file)
+    # 1. Load symbols from config
+    symbols = _load_symbols(symbols_str)
     if not symbols:
         logger.error("No symbols loaded — aborting DGI screener run")
         return {"error": "No symbols loaded", "total_screened": 0}

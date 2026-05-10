@@ -1825,6 +1825,7 @@ async def settings_config_page(request: Request):
         "options_chain_next_run": options_chain_next_run,
         "dgi_enabled": dgi_enabled,
         "dgi_cron": dgi_cron,
+        "dgi_symbols": dgi_cfg.get("symbols", ""),
         "dgi_last_run": dgi_last_run,
         "dgi_next_run": dgi_next_run,
     })
@@ -1964,6 +1965,7 @@ async def settings_config_save(request: Request):
     # DGI screener settings
     dgi_enabled = form.get("dgi_enabled") == "true"
     dgi_cron = str(form.get("dgi_cron", "0 6 * * 1-5")).strip()
+    dgi_symbols = str(form.get("dgi_symbols", "")).strip()
     
     if dgi_cron:
         try:
@@ -1973,12 +1975,14 @@ async def settings_config_save(request: Request):
                 cosmos_settings.setdefault("dgi_screener", {})
                 cosmos_settings["dgi_screener"]["enabled"] = dgi_enabled
                 cosmos_settings["dgi_screener"]["cron"] = dgi_cron
+                cosmos_settings["dgi_screener"]["symbols"] = dgi_symbols
                 _save_settings_to_cosmos(cosmos, cosmos_settings)
             
             config = _load_config()
             config.setdefault("dgi_screener", {})
             config["dgi_screener"]["enabled"] = dgi_enabled
             config["dgi_screener"]["cron"] = dgi_cron
+            config["dgi_screener"]["symbols"] = dgi_symbols
             _write_config(config)
             saved.append("DGI screener")
             
@@ -2037,6 +2041,7 @@ async def settings_config_save(request: Request):
         "options_chain_cron": oc_cron,
         "dgi_enabled": dgi_en,
         "dgi_cron": dgi_cr,
+        "dgi_symbols": dgi_cfg.get("symbols", ""),
     })
 
 

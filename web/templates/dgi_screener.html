@@ -4,28 +4,13 @@
 {% block content %}
 <div class="page-header">
     <h1>DGI Screener</h1>
-    <p class="subtitle">Top 20 Dividend Growth Stocks — S&amp;P 500</p>
+    <p class="subtitle">Top 20 Dividend Growth Stocks</p>
 </div>
 
-<!-- Summary Cards -->
-<div class="summary-row">
-    <div class="summary-card">
-        <div class="summary-value">{{ top20 | length }}</div>
-        <div class="summary-label">Top 20 Stocks</div>
-    </div>
-    <div class="summary-card">
-        <div class="summary-value" style="font-size:1rem;">{{ last_run or "Never" }}</div>
-        <div class="summary-label">Last Run</div>
-    </div>
-    <div class="summary-card">
-        <div class="summary-value" style="font-size:1rem;">{{ next_run or "N/A" }}</div>
-        <div class="summary-label">Next Scheduled Run</div>
-    </div>
-    <div class="summary-card summary-card-action">
-        <button class="btn-trigger" id="btnRunDgi" onclick="triggerDgi()">
-            🔄 Run DGI Screener
-        </button>
-    </div>
+<div style="margin-bottom:1.5rem;">
+    <button class="btn-trigger" id="btnRunDgi" onclick="triggerDgi()">
+        🔄 Run DGI Screener
+    </button>
 </div>
 
 {% if error %}
