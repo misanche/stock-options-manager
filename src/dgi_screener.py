@@ -12,6 +12,24 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Yahoo Finance exchange code → TradingView market name
+EXCHANGE_MAP = {
+    "NYQ": "NYSE",
+    "NMS": "NASDAQ",
+    "NGM": "NASDAQ",   # NASDAQ Global Market
+    "NCM": "NASDAQ",   # NASDAQ Capital Market
+    "NIM": "NASDAQ",   # NASDAQ Intermarket
+    "PCX": "NYSE",     # NYSE Arca
+    "ASE": "AMEX",     # NYSE American (AMEX)
+    "BTS": "NYSE",     # BATS → now Cboe, trades NYSE-listed
+    "YHD": "NYSE",     # Yahoo default
+}
+
+
+def _normalize_exchange(raw: str) -> str:
+    """Map yfinance exchange codes to TradingView-compatible names."""
+    return EXCHANGE_MAP.get(raw, raw if raw else "NYSE")
+
 
 def _load_symbols(symbols_str: str) -> list[str]:
     """Parse ticker symbols from comma-separated config string."""
@@ -46,7 +64,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
 
     dgi_config = config.config.get("dgi_screener", {})
     symbols_str = dgi_config.get("symbols", "")
-    top_n = dgi_config.get("top_n", 20)
+    top_n = dgi_config.get("top_n", 40)
     filters = dgi_config.get("filters", {})
     tech_config = dgi_config.get("technical_indicators", {})
     weights = dgi_config.get("score_weights", {})
@@ -115,7 +133,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 or info.get("regularMarketPrice")
                 or 0,
                 "sector": info.get("sector", ""),
-                "exchange": info.get("exchange", ""),
+                "exchange": _normalize_exchange(info.get("exchange", "")),
             }
 
             logger.info("[DGI %s] yield=%.3f, cagr=%.3f, years=%d, payout=%.2f, pe=%.1f, de=%.2f, mcap=%s",

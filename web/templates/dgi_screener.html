@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
     <h1>DGI Screener</h1>
-    <p class="subtitle">Top 20 Dividend Growth Stocks</p>
+    <p class="subtitle">Top 40 Dividend Growth Stocks</p>
 </div>
 
 <div style="margin-bottom:1.5rem;">
@@ -18,6 +18,39 @@
 {% endif %}
 
 {% if top20 %}
+<!-- Filter Panel -->
+<div class="card" style="margin-bottom:1rem;">
+    <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;" onclick="toggleFilters()">
+        <h2 style="margin:0;font-size:1.1rem;">🔍 Filters</h2>
+        <span id="filterCount" style="font-size:0.9rem;color:var(--text-muted);">Showing 40 of 40</span>
+    </div>
+    <div id="filterPanel" style="padding:1rem 1.25rem;">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem;">
+            <div>
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Quality Score ≥ <span id="qsVal" style="color:var(--text);font-weight:500;">0</span></label>
+                <input type="range" min="0" max="100" value="0" id="filterQS" oninput="applyFilters()" class="range-slider">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Div Yield ≥ <span id="dyVal" style="color:var(--text);font-weight:500;">0.0%</span></label>
+                <input type="range" min="0" max="100" value="0" id="filterDY" oninput="applyFilters()" class="range-slider">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Div Growth ≥ <span id="dgVal" style="color:var(--text);font-weight:500;">0%</span></label>
+                <input type="range" min="0" max="100" value="0" id="filterDG" oninput="applyFilters()" class="range-slider">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Years ≥ <span id="yearsVal" style="color:var(--text);font-weight:500;">0</span></label>
+                <input type="range" min="0" max="100" value="0" id="filterYears" oninput="applyFilters()" class="range-slider">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Timing ≥ <span id="timingVal" style="color:var(--text);font-weight:500;">0</span></label>
+                <input type="range" min="0" max="100" value="0" id="filterTiming" oninput="applyFilters()" class="range-slider">
+            </div>
+        </div>
+        <button onclick="resetFilters()" class="btn-sm" style="margin-top:0.75rem;background:var(--bg-input);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.75rem;border-radius:var(--radius);cursor:pointer;">Reset Filters</button>
+    </div>
+</div>
+
 <div class="card" style="overflow-x:auto;">
     <table class="table dgi-table" id="dgiTable">
         <thead>
@@ -61,8 +94,8 @@
                 <td class="mono">{{ "%.1f" | format(technicals.score | default(0)) }}</td>
                 <td><span class="badge badge-entry-{{ tag_lower }}">{{ tag }}</span></td>
                 <td class="actions-cell">
-                    <button class="btn-trigger-row btn-dgi-analyze" data-symbol="{{ entry.symbol }}" title="Run CSP analysis for {{ entry.symbol }}">▶</button>
-                    <button class="btn-trigger-row btn-dgi-add" data-symbol="{{ entry.symbol }}" data-exchange="NYSE" title="Add {{ entry.symbol }} to watchlist with CSP enabled">➕</button>
+                    <button class="btn-trigger-row btn-dgi-analyze" data-symbol="{{ entry.symbol }}" title="Analyze {{ entry.symbol }} in Quick Analysis chat">▶</button>
+                    <button class="btn-trigger-row btn-dgi-add" data-symbol="{{ entry.symbol }}" data-exchange="{{ entry.exchange | default('NYSE') }}" title="Add {{ entry.symbol }} to watchlist with CSP enabled">➕</button>
                 </td>
             </tr>
             {% endfor %}
@@ -91,6 +124,69 @@
 {% block scripts %}
 <script>
 (function() {
+    /* ── Filter Panel Toggle & Logic ── */
+    window.toggleFilters = function() {
+        var panel = document.getElementById('filterPanel');
+        var isVisible = panel.style.display !== 'none';
+        panel.style.display = isVisible ? 'none' : 'block';
+    };
+
+    window.applyFilters = function() {
+        var qsVal = parseInt(document.getElementById('filterQS').value);
+        var dyVal = parseInt(document.getElementById('filterDY').value);
+        var dgVal = parseInt(document.getElementById('filterDG').value);
+        var yearsVal = parseInt(document.getElementById('filterYears').value);
+        var timingVal = parseInt(document.getElementById('filterTiming').value);
+
+        // Update displayed values
+        document.getElementById('qsVal').textContent = qsVal;
+        document.getElementById('dyVal').textContent = (dyVal / 10).toFixed(1) + '%';
+        document.getElementById('dgVal').textContent = dgVal + '%';
+        document.getElementById('yearsVal').textContent = yearsVal;
+        document.getElementById('timingVal').textContent = timingVal;
+
+        var rows = document.querySelectorAll('.dgi-row');
+        var visibleCount = 0;
+        var totalCount = rows.length;
+
+        rows.forEach(function(row) {
+            try {
+                var entry = JSON.parse(row.getAttribute('data-entry'));
+                var qualityScore = entry.quality_score || 0;
+                var dividendYield = (entry.metrics && entry.metrics.dividend_yield) || 0;
+                var dividendCAGR = (entry.metrics && entry.metrics.dividend_cagr_5y) || 0;
+                var years = (entry.metrics && entry.metrics.years_consecutive_increases) || 0;
+                var timing = (entry.technicals && entry.technicals.score) || 0;
+
+                var passQS = qualityScore >= qsVal;
+                var passDY = dividendYield >= (dyVal / 10);
+                var passDG = (dividendCAGR * 100) >= dgVal;
+                var passYears = years >= yearsVal;
+                var passTiming = timing >= timingVal;
+
+                if (passQS && passDY && passDG && passYears && passTiming) {
+                    row.style.display = 'table-row';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            } catch(err) {
+                console.error('Failed to parse entry data', err);
+            }
+        });
+
+        document.getElementById('filterCount').textContent = 'Showing ' + visibleCount + ' of ' + totalCount;
+    };
+
+    window.resetFilters = function() {
+        document.getElementById('filterQS').value = 0;
+        document.getElementById('filterDY').value = 0;
+        document.getElementById('filterDG').value = 0;
+        document.getElementById('filterYears').value = 0;
+        document.getElementById('filterTiming').value = 0;
+        applyFilters();
+    };
+
     /* ── Trigger DGI screener ── */
     window.triggerDgi = async function() {
         var btn = document.getElementById('btnRunDgi');
@@ -120,35 +216,26 @@
         }
     };
 
-    /* ── Quick Analysis (CSP) per row ── */
+    /* ── Quick Analysis (CSP) per row — redirects to chat page ── */
     document.querySelectorAll('.btn-dgi-analyze').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
             e.stopPropagation();
             var symbol = btn.dataset.symbol;
-            var orig = btn.textContent;
-            btn.textContent = '⏳';
-            btn.disabled = true;
-            btn.classList.add('running');
-
-            fetch('/api/trigger/cash_secured_put', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol: symbol })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                btn.textContent = data.status === 'triggered' ? '✓' : '✗';
-                btn.classList.remove('running');
-                btn.classList.add(data.status === 'triggered' ? 'done' : 'error');
-            })
-            .catch(function() {
-                btn.textContent = '✗';
-                btn.classList.remove('running');
-                btn.classList.add('error');
-            })
-            .finally(function() {
-                setTimeout(function() { btn.textContent = orig; btn.disabled = false; btn.classList.remove('done','error'); }, 4000);
-            });
+            
+            // Get exchange from the row's data-entry JSON
+            var row = btn.closest('tr');
+            var entry = null;
+            try {
+                entry = JSON.parse(row.getAttribute('data-entry'));
+            } catch (err) {
+                console.error('Failed to parse entry data', err);
+            }
+            
+            var market = entry ? (entry.exchange || 'NYSE') : 'NYSE';
+            
+            // Redirect to chat in quick-analysis mode with put pre-selected
+            window.location.href = '/chat?mode=quick-analysis&symbol=' + encodeURIComponent(symbol) + 
+                                    '&market=' + encodeURIComponent(market) + '&option_type=put';
         });
     });
 
@@ -302,6 +389,8 @@
                 }
                 return asc ? at.localeCompare(bt) : bt.localeCompare(at);
             });
+            
+            // Maintain filter state - preserve display property during sort
             rows.forEach(function(r) { tbody.appendChild(r); });
         });
     });

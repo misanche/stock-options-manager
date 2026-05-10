@@ -385,6 +385,17 @@
             }
         }
     });
+    
+    // Auto-start from URL params (e.g., from DGI screener)
+    var urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('mode') === 'quick-analysis' && urlParams.get('symbol')) {
+        symbolInputEl.value = urlParams.get('symbol');
+        marketInputEl.value = urlParams.get('market') || 'NYSE';
+        optionTypeInputEl.value = urlParams.get('option_type') || 'put';
+        selectMode('quick-analysis');
+        // Auto-trigger fetch after a small delay to let the UI render
+        setTimeout(function() { fetchAndAnalyze(); }, 100);
+    }
 })();
 </script>
 {% endblock %}
