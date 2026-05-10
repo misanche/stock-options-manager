@@ -1,10 +1,10 @@
 # Stock Options Manager
 
-Periodic options trading analysis using Microsoft Agent Framework with hybrid TradingView data fetching — `requests` + `BeautifulSoup` + TradingView scanner API for most data, Playwright (headless Chromium) only for options chain — fronted by an **in-memory cache layer** (`tv_cache.py`) with per-key TTL and async locking to eliminate redundant fetches across agents. All data — watchlists, positions, activities, reports, and alerts — is stored in **Azure CosmosDB** (NoSQL) with a symbol-centric partition model.
+DGI-focused income acceleration platform — uses **Cash Secured Puts (CSP)** to acquire top dividend growth stocks at a discount, and **Covered Calls (CC)** to generate additional income on held DGI positions. A built-in **DGI Screener** identifies the best dividend growth candidates from a configurable stock universe (default: S&P 500), ranking them by a composite quality score combining fundamental strength and technical timing. Options trading analysis is powered by Microsoft Agent Framework with hybrid TradingView data fetching — `requests` + `BeautifulSoup` + TradingView scanner API for most data, Playwright (headless Chromium) only for options chain — fronted by an **in-memory cache layer** (`tv_cache.py`) with per-key TTL and async locking to eliminate redundant fetches across agents. All data — watchlists, positions, activities, reports, alerts, and DGI screener results — is stored in **Azure CosmosDB** (NoSQL) with a symbol-centric partition model.
 
 ## Architecture
 
-Seven specialized agents handle options trading:
+Eight specialized agents handle options trading and stock screening:
 - **Covered Call Agent**: Analyzes stocks for covered call writing opportunities
 - **Cash Secured Put Agent**: Analyzes stocks for cash secured put opportunities
 - **Open Call Monitor**: Monitors open covered call positions for assignment risk
@@ -12,12 +12,13 @@ Seven specialized agents handle options trading:
 - **Supervisor Agent (Quality Auditor)**: Validates trading decisions for data errors, blind spots, and unaddressed risks — acts as a quality gate ensuring the primary agents' work is accurate
 - **Alpha Advisor Agent (Aggressive Perspective)**: Provides alternative, more aggressive viewpoints when technically justified — suggesting higher-premium strikes, shorter DTE, or bolder entries to complement the conservative primary agents
 - **Report Agent**: Generates comprehensive per-symbol reports combining technical analysis, dividends, options chain, open position risk, and monitoring recommendations
+- **DGI Screener**: Screens a configurable stock universe for top dividend growth investing candidates, ranking by composite quality score (70% fundamental + 30% technical timing) and selecting the Top 20
 
 The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The Supervisor and Alpha Advisor run as Phase 3 in parallel — after the primary decision is written but before Telegram notifications, providing quality assurance and aggressive alternatives respectively. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
 
 Both sell-side agents use the Microsoft Agent Framework (`agent-framework`) with TradingView as the data source. Market data is pre-fetched deterministically — overview, technicals, forecast, and dividends via `requests` + `BeautifulSoup` + TradingView scanner API; options chain via [Playwright](https://playwright.dev/python/) (headless Chromium) — and passed to the LLM for analysis. The LLM never touches the browser or makes HTTP requests directly.
 
-**Storage backend:** Azure CosmosDB with three containers: `symbols` (watchlists, positions, activities, alerts, reports), `telemetry` (runtime performance stats with 30-day TTL), and `settings` (application configuration persistence). Each symbol is a partition key in the symbols container containing four document types: `symbol_config` (watchlist flags + positions), `activity` (full audit trail), `alert` (actionable alerts), and `report` (generated symbol reports). The telemetry container tracks TradingView fetch durations and agent run times, displayed on the Settings page. The settings container persists application configuration with partition key `/id`. See the [Azure CosmosDB Setup](#azure-cosmosdb-setup) section for provisioning.
+**Storage backend:** Azure CosmosDB with four containers: `symbols` (watchlists, positions, activities, alerts, reports), `telemetry` (runtime performance stats with 30-day TTL), `settings` (application configuration persistence), and `dgi_screener` (DGI screening results and daily snapshots). Each symbol is a partition key in the symbols container containing four document types: `symbol_config` (watchlist flags + positions), `activity` (full audit trail), `alert` (actionable alerts), and `report` (generated symbol reports). The telemetry container tracks TradingView fetch durations and agent run times, displayed on the Settings page. The settings container persists application configuration with partition key `/id`. The dgi_screener container stores current Top 20 entries and daily snapshots for historical tracking, partitioned by `/symbol`. See the [Azure CosmosDB Setup](#azure-cosmosdb-setup) section for provisioning.
 
 ## How It Works
 
@@ -316,7 +317,7 @@ context:
 
 ### CosmosDB Document Model
 
-All data is stored in Azure CosmosDB across three containers:
+All data is stored in Azure CosmosDB across four containers:
 
 **`symbols` container** (partition key: `/symbol`) — four document types:
 
@@ -339,6 +340,13 @@ All data is stored in Azure CosmosDB across three containers:
 | Document ID | Purpose | Persisted Sections |
 |---|---|---|
 | `app_config` | Application settings synchronized across all components | `context`, `scheduler`, `web`, `telegram` |
+
+**`dgi_screener` container** (partition key: `/symbol`) — DGI screening results:
+
+| Document Type | Purpose | Growth |
+|---|---|---|
+| `dgi_top20` | Current Top 20 DGI entries — composite score, category, metrics | Static (replaced each run) |
+| `dgi_snapshot` | Daily snapshots for historical tracking of screener results | ~1/day per symbol |
 
 On first run, configuration from `config.yaml` is seeded into the `settings` container (except `azure` and `cosmosdb` sections which remain file-only). On subsequent runs, new keys from `config.yaml` are added to CosmosDB, but existing values are never overwritten, allowing the Settings UI to persist changes. The Settings UI reads and writes directly to CosmosDB, making configuration changes immediately available to all components (scheduler, telegram notifier, web UI) without restart. If CosmosDB is unavailable, `config.yaml` serves as the fallback.
 
@@ -499,6 +507,132 @@ Each report covers:
 4. The LLM generates a structured report from the system prompt (`src/tv_report_instructions.py`)
 5. The report is stored in CosmosDB as a `doc_type="report"` document and displayed on a dedicated page (`/symbols/{symbol}/report`)
 
+## DGI Screener
+
+The DGI Screener identifies top dividend growth investing candidates from a configurable stock universe (default: S&P 500). It ranks stocks by a composite quality score combining fundamental strength (70%) and technical timing (30%), selecting the Top 20 for investment consideration via CSP or direct purchase.
+
+### Categories
+
+Each screened stock is classified into one of five categories:
+
+| Category | Criteria | Badge Color |
+|---|---|---|
+| **Aristocrat** | 25+ years of consecutive dividend growth, 2%+ yield | 🟣 Purple |
+| **Rising Star** | 15%+ dividend growth CAGR | 🟢 Green |
+| **Compounder** | 10%+ dividend growth CAGR | 🔵 Blue |
+| **High Yield** | 4%+ current dividend yield | 🟠 Orange |
+| **Balanced** | Meets minimum filters but doesn't fit above categories | ⚪ Gray |
+
+### Quality Score
+
+The composite quality score is a weighted blend of fundamental and technical factors:
+
+| Factor | Weight | Description |
+|---|---|---|
+| `dividend_yield` | 15% | Current annual dividend yield |
+| `dividend_growth` | 18% | Dividend growth CAGR over available history |
+| `payout_safety` | 10% | Payout ratio health (lower is safer) |
+| `valuation` | 10% | P/E ratio attractiveness vs. sector |
+| `financial_health` | 7% | Debt/equity ratio and balance sheet strength |
+| `consistency` | 10% | Years of consecutive dividend growth |
+| `technical_timing` | 30% | Technical indicator composite (RSI, moving averages, proximity to 52-week low) |
+
+### Minimum Filters
+
+Stocks must pass all filters before scoring:
+
+| Filter | Default | Description |
+|---|---|---|
+| `min_yield` | 1.5% | Minimum dividend yield |
+| `max_payout` | 75% | Maximum payout ratio |
+| `max_pe` | 30 | Maximum P/E ratio |
+| `max_de` | 2.0 | Maximum debt/equity ratio |
+| `min_years` | 3 | Minimum consecutive years of dividend growth |
+| `min_market_cap` | $10B | Minimum market capitalization |
+| `min_growth` | 0% | Minimum dividend growth rate |
+
+### Data Source
+
+The DGI Screener uses **yfinance** for all data fetching — this is independent of TradingView and does not use the TradingView cache layer. Stock fundamentals, dividend history, and technical indicators are all sourced from Yahoo Finance via the `yfinance` Python package.
+
+### Storage
+
+DGI Screener results are stored in the CosmosDB `dgi_screener` container (partition key: `/symbol`) with two document types:
+
+- **`dgi_top20`** — Current Top 20 entries. Replaced on each screener run with the latest rankings, scores, categories, and metrics.
+- **`dgi_snapshot`** — Daily snapshots preserving historical screener results for trend tracking (e.g., how long a stock has been in the Top 20).
+
+### Scheduling
+
+The DGI Screener runs on a configurable cron schedule (default: `0 6 * * 1-5` — 6 AM weekdays). It can be enabled or disabled via the Settings page toggle.
+
+### Symbols Configuration
+
+The stock universe is configured in `config.yaml` under `dgi_screener.symbols` as a comma-separated list. This can also be edited via the Settings page textarea.
+
+```yaml
+dgi_screener:
+  enabled: true
+  cron: "0 6 * * 1-5"
+  top_n: 20
+  symbols: "AAPL,MSFT,JNJ,PG,KO,PEP,ABBV,MCD,T,VZ,O,SCHD,..."
+  filters:
+    min_yield: 1.5
+    max_payout: 75
+    max_pe: 30
+    max_de: 2.0
+    min_years: 3
+    min_market_cap: 10000000000
+    min_growth: 0
+  score_weights:
+    dividend_yield: 0.15
+    dividend_growth: 0.18
+    payout_safety: 0.10
+    valuation: 0.10
+    financial_health: 0.07
+    consistency: 0.10
+    technical_timing: 0.30
+  technical_indicators:
+    rsi_period: 14
+    sma_periods: [50, 200]
+    week52_proximity_weight: 0.4
+```
+
+### Web UI
+
+The DGI Screener has a dedicated page at `/dgi`, accessible from the navigation bar. The page displays a Top 20 table with the following columns:
+
+| Column | Description |
+|---|---|
+| Rank | Position in the Top 20 |
+| Symbol | Stock ticker |
+| Category | Color-coded badge (Aristocrat, Rising Star, Compounder, High Yield, Balanced) |
+| Score | Composite quality score (0-100) |
+| Yield | Current dividend yield |
+| Growth CAGR | Dividend growth compound annual growth rate |
+| Years | Consecutive years of dividend growth |
+| Timing | Technical timing score (0-100) |
+| Days on List | Number of consecutive days the stock has appeared in the Top 20 |
+
+Each row has per-symbol actions:
+- **Quick Analysis (▶)** — Triggers the CSP agent for immediate analysis of the stock
+- **Add to Symbols (➕)** — Adds the stock to the watchlist with CSP enabled
+
+### How It Works
+
+The DGI Screener runs a 10-step pipeline:
+
+1. **Load symbols** from `config.yaml` (or Settings override)
+2. **Fetch yfinance data** — fundamentals, dividend history, technicals for each symbol
+3. **Calculate fundamental metrics** — yield, growth CAGR, payout ratio, P/E, D/E, years of growth
+4. **Calculate technical metrics** — RSI, SMA crossovers, 52-week low proximity
+5. **Apply minimum filters** — exclude stocks that fail any filter threshold
+6. **Calculate quality scores** — weighted composite of all factors
+7. **Select Top N** — rank by score, keep top 20 (configurable)
+8. **Categorize** — assign category based on metrics (Aristocrat, Rising Star, etc.)
+9. **Update days_on_list** — persist consecutive appearance count across runs
+10. **Write to CosmosDB** — upsert `dgi_top20` documents + append `dgi_snapshot` for the day
+
 ## Project Structure
 
 ```
@@ -530,6 +664,9 @@ stock-options-manager/
 │   ├── tv_report_instructions.py         # Report agent system prompt
 │   ├── tv_supervisor_instructions.py      # Supervisor agent (quality auditor) — 9 playbooks, 4 agent contexts
 │   ├── tv_alpha_instructions.py           # Alpha Advisor agent (aggressive perspective) — 9 playbooks, 4 agent contexts
+│   ├── dgi_screener.py                    # DGI Screener — 10-step pipeline for dividend growth stock screening
+│   ├── dgi_metrics.py                     # DGI fundamental + technical metric calculations
+│   ├── yfinance_fetcher.py                # Yahoo Finance data fetcher for DGI Screener (independent of TradingView)
 │   └── telegram_notifier.py              # Telegram notification service — sends alerts via bot API
 ├── scripts/
 │   └── provision_cosmosdb.sh             # Azure CosmosDB provisioning via az CLI
@@ -546,6 +683,7 @@ stock-options-manager/
 │   │   ├── symbol_report.html            # Per-symbol report display page
 │   │   ├── symbol_chat.html              # Per-symbol chat page with context selection
 │   │   ├── fetch_preview.html            # Raw data debug/preview page
+│   │   ├── dgi_screener.html              # DGI Screener Top 20 page
 │   │   └── chat.html                     # Chat interface (dual-mode)
 │   └── static/
 │       ├── style.css                     # Revolut-inspired dark trading theme CSS
@@ -570,6 +708,7 @@ stock-options-manager/
   - **Quick Analysis** — Analyze any symbol (tracked or not) by fetching live TradingView data without saving to the database. Click "Quick Analysis", select a market (NASDAQ/NYSE/AMEX/OTC), and get instant analysis without committing to tracking.
   - Mode selector on the chat page lets you switch between modes at any time.
 - **Settings** (`/settings`) — Scheduler config, Telegram notifications toggle & test button, Summarization Agent config (cron schedule & activity count), runtime stats (today/7d/30d telemetry), TradingView error tracking and anti-403 stats, a Debug TradingView Fetch tool for testing data fetching per symbol, and an **Agent Chain Pipeline** debug view (`/api/debug/agent-chain/{symbol}`) for inspecting the full two-phase monitor pipeline per symbol. Settings are persisted to CosmosDB and survive application restarts and deployments. Changes made in the Settings UI are immediately available to all components (scheduler, telegram notifier, summarization agent, etc.) without requiring a restart.
+- **DGI Screener** (`/dgi`) — Top 20 dividend growth stock candidates ranked by composite quality score. Color-coded category badges, per-row Quick Analysis (▶) and Add to Symbols (➕) actions. Configurable stock universe and filter thresholds via Settings.
 
 ---
 
@@ -598,6 +737,8 @@ This installs:
 - `beautifulsoup4` - HTML parsing for TradingView overview and dividend data
 - `requests` - HTTP client for TradingView scanner API (overview, technicals, forecast, dividends)
 - `playwright` - Headless Chromium for options chain fetching only (requires browser authentication)
+- `yfinance` - Yahoo Finance data fetcher for DGI Screener (independent of TradingView)
+- `numpy`, `pandas` - Numerical computation and data manipulation for DGI scoring pipeline
 - `pyyaml`, `croniter`, `python-dotenv` - Configuration and scheduling
 
 #### 2. Configure Environment Variables
@@ -862,6 +1003,16 @@ az cosmosdb sql container create \
   --database-name "$DATABASE_NAME" \
   --name "settings" \
   --partition-key-path "/id" \
+  --partition-key-version 2 \
+  -o none
+
+# Create dgi_screener container (partition key /symbol, DGI screening results)
+az cosmosdb sql container create \
+  --account-name "$COSMOSDB_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --database-name "$DATABASE_NAME" \
+  --name "dgi_screener" \
+  --partition-key-path "/symbol" \
   --partition-key-version 2 \
   -o none
 

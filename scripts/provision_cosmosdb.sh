@@ -13,7 +13,7 @@
 #   1. Creates a resource group (if it doesn't exist)
 #   2. Creates a CosmosDB account (serverless by default)
 #   3. Creates the "stock-options-manager" database
-#   4. Creates the "symbols" container with partition key /symbol
+#   4. Creates four containers: "symbols", "telemetry", "settings", "dgi_screener"
 #   5. Applies custom indexing policy (index query fields, exclude large blobs)
 #   6. Retrieves and prints the connection endpoint and primary key
 #
@@ -172,6 +172,35 @@ az cosmosdb sql container create \
 #   -o none
 
 echo "  ✓ Settings container ready"
+
+# ── 4d. Create DGI Screener Container ────────────────────────────────────────
+DGI_CONTAINER="dgi_screener"
+echo "▶ Creating container '$DGI_CONTAINER' (partition key: /symbol)..."
+
+# Serverless container
+az cosmosdb sql container create \
+  --account-name "$COSMOSDB_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --database-name "$DATABASE_NAME" \
+  --name "$DGI_CONTAINER" \
+  --partition-key-path "/symbol" \
+  --partition-key-version 2 \
+  --only-show-errors \
+  -o none
+
+# Provisioned container with autoscale (uncomment if using Option B above)
+# az cosmosdb sql container create \
+#   --account-name "$COSMOSDB_ACCOUNT" \
+#   --resource-group "$RESOURCE_GROUP" \
+#   --database-name "$DATABASE_NAME" \
+#   --name "$DGI_CONTAINER" \
+#   --partition-key-path "/symbol" \
+#   --partition-key-version 2 \
+#   --max-throughput 4000 \
+#   --only-show-errors \
+#   -o none
+
+echo "  ✓ DGI Screener container ready"
 
 # ── 5. Apply Custom Indexing Policy ──────────────────────────────────────────
 echo "▶ Applying custom indexing policy..."
