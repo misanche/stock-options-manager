@@ -64,23 +64,36 @@ async def run_dgi_screener(config, cosmos) -> dict:
     logger.info("DGI Screener: starting with %d symbols", total_screened)
 
     # 2. Fetch yfinance data
+    logger.info("DGI Screener: fetching yfinance data for %d symbols...", total_screened)
     fetcher = YFinanceFetcher()
     batch_data = fetcher.get_batch_data(symbols)
-    logger.info("Fetched data for %d / %d symbols", len(batch_data), total_screened)
+    logger.info("DGI Screener: fetched data for %d / %d symbols", len(batch_data), total_screened)
+    if not batch_data:
+        logger.error("DGI Screener: no data returned from yfinance — aborting")
+        return {"error": "No data from yfinance", "total_screened": total_screened}
 
     # 3-4. Calculate metrics and apply filters
     candidates = []
-    for symbol, item in batch_data.items():
+    filtered_out = 0
+    errors = 0
+    for idx, (symbol, item) in enumerate(batch_data.items()):
         if not symbol:
             continue
 
         try:
-            years = dgi_metrics.calculate_years_consecutive_increases(
-                item.get("dividends")
-            )
-            cagr = dgi_metrics.calculate_dividend_cagr(item.get("dividends"))
-
             info = item.get("info", {})
+            dividends = item.get("dividends")
+            history = item.get("history")
+
+            logger.info("[DGI %d/%d] %s — info keys: %d, dividends: %s, history: %s",
+                        idx + 1, len(batch_data), symbol,
+                        len(info) if info else 0,
+                        f"{len(dividends)} entries" if dividends is not None and hasattr(dividends, '__len__') else str(type(dividends)),
+                        f"{len(history)} rows" if history is not None and hasattr(history, '__len__') else str(type(history)))
+
+            years = dgi_metrics.calculate_years_consecutive_increases(dividends)
+            cagr = dgi_metrics.calculate_dividend_cagr(dividends)
+
             metrics = {
                 "dividend_yield": info.get("dividendYield") or 0,
                 "dividend_cagr_5y": cagr,
@@ -100,11 +113,22 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 "exchange": info.get("exchange", ""),
             }
 
+            logger.info("[DGI %s] yield=%.3f, cagr=%.3f, years=%d, payout=%.2f, pe=%.1f, de=%.2f, mcap=%s",
+                        symbol, metrics["dividend_yield"], cagr, years,
+                        metrics["payout_ratio"], metrics["pe_ratio"],
+                        metrics["debt_to_equity"],
+                        f"{metrics['market_cap']/1e9:.1f}B" if metrics["market_cap"] else "0")
+
             if not dgi_metrics.passes_minimum_filters(metrics, filters):
+                logger.info("[DGI %s] FILTERED OUT — failed minimum filters", symbol)
+                filtered_out += 1
                 continue
 
             # Technical timing
-            history = item.get("history")
+            if history is None or (hasattr(history, 'empty') and history.empty):
+                logger.warning("[DGI %s] No price history — skipping technical score", symbol)
+                continue
+
             tech_kwargs = {}
             if "rsi_period" in tech_config:
                 tech_kwargs["rsi_period"] = tech_config["rsi_period"]
@@ -128,6 +152,10 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 metrics, technicals
             )
 
+            logger.info("[DGI %s] PASSED — quality_score=%.2f, tech_timing=%s, category pending",
+                        symbol, quality,
+                        technicals.get("score", technicals.get("technical_timing_score", "?")))
+
             candidates.append({
                 "symbol": symbol,
                 "metrics": metrics,
@@ -136,11 +164,13 @@ async def run_dgi_screener(config, cosmos) -> dict:
             })
 
         except Exception as e:
-            logger.warning("Error processing %s: %s", symbol, e)
+            logger.warning("[DGI %s] ERROR: %s", symbol, e, exc_info=True)
+            errors += 1
             continue
 
     passed_filters = len(candidates)
-    logger.info("DGI Screener: %d passed filters out of %d", passed_filters, total_screened)
+    logger.info("DGI Screener: %d passed, %d filtered out, %d errors, out of %d fetched",
+                passed_filters, filtered_out, errors, len(batch_data))
 
     # 5-6. Sort by score and take top N
     candidates.sort(key=lambda x: x["quality_score"], reverse=True)

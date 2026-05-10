@@ -687,3 +687,17 @@ Added "Run DGI Screener" button to web dashboard with backing API. Pattern follo
 - Last run determined from `max(last_updated)` across dgi_top20 entries
 - Scheduler reschedule via `scheduler.reschedule_dgi_screener()`
 - `timezone` variable shadowing in settings functions — local string var shadows `datetime.timezone` import; avoid using `timezone.utc` in those functions
+
+### README & Provision Script — DGI Screener Documentation (2026-07)
+**Status:** ✅ Completed
+**Scope:** Full documentation update for DGI Screener feature across README.md and provision script
+
+**Changes:**
+- **README.md:** Updated opening paragraph to describe DGI income acceleration strategy (CSP to buy cheaper, CC to generate income). Architecture: 7→8 agents, 3→4 containers. Added comprehensive `## DGI Screener` section covering categories, quality score weights, minimum filters, yfinance data source, CosmosDB storage model, scheduling, config.yaml structure, web UI (/dgi page), and 10-step pipeline. Updated CosmosDB Document Model, Project Structure (3 new src files + template), Web Dashboard bullets, and dependency list (yfinance, numpy, pandas).
+- **scripts/provision_cosmosdb.sh:** Added section 4d for `dgi_screener` container (serverless active + provisioned commented). Updated header comment to mention 4 containers.
+- **README CosmosDB Setup section:** Added `az cosmosdb sql container create` for `dgi_screener` between settings and indexing policy.
+
+**Patterns:**
+- README DGI section is self-contained but references related sections (CosmosDB Setup, Settings)
+- Provision script follows existing pattern: serverless active, provisioned commented, variable for container name
+- All container counts updated consistently (Architecture, Document Model, script header)
