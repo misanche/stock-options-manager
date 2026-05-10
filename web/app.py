@@ -1788,7 +1788,7 @@ async def settings_config_page(request: Request):
     
     if cosmos:
         try:
-            dgi_entries = cosmos.get_dgi_top20()
+            dgi_entries = cosmos.get_dgi_top()
             timestamps = [e.get("last_updated", "") for e in dgi_entries if e.get("last_updated")]
             if timestamps:
                 latest = max(timestamps)
@@ -2409,9 +2409,9 @@ async def trigger_all_status(request: Request):
 
 @app.get("/dgi", response_class=HTMLResponse)
 async def dgi_page(request: Request):
-    """DGI Screener page — Top 20 dividend growth stocks."""
+    """DGI Screener page — Top dividend growth stocks."""
     cosmos = getattr(request.app.state, "cosmos", None)
-    top20: list = []
+    top_entries: list = []
     last_run = ""
     next_run = ""
     error = None
@@ -2420,14 +2420,14 @@ async def dgi_page(request: Request):
         error = "CosmosDB not available"
     else:
         try:
-            top20 = cosmos.get_dgi_top20()
-            top20.sort(key=lambda x: x.get("rank", 999))
+            top_entries = cosmos.get_dgi_top()
+            top_entries.sort(key=lambda x: x.get("rank", 999))
         except Exception as e:
             error = f"Failed to load DGI data: {e}"
 
     # Determine last run from the most recent last_updated timestamp
-    if top20:
-        timestamps = [e.get("last_updated", "") for e in top20 if e.get("last_updated")]
+    if top_entries:
+        timestamps = [e.get("last_updated", "") for e in top_entries if e.get("last_updated")]
         if timestamps:
             try:
                 latest = max(timestamps)
@@ -2457,7 +2457,7 @@ async def dgi_page(request: Request):
 
     return templates.TemplateResponse("dgi_screener.html", {
         "request": request,
-        "top20": top20,
+        "top20": top_entries,
         "last_run": last_run,
         "next_run": next_run,
         "error": error,
@@ -2480,8 +2480,14 @@ async def dgi_analyze_symbol(request: Request, symbol: str):
     # Run the blocking yfinance fetch in a thread to avoid blocking the event loop
     from src.dgi_screener import analyze_single_symbol
 
+    # Load filters: CosmosDB first, fallback to config.yaml
+    cosmos = getattr(request.app.state, "cosmos", None)
+    cosmos_settings = _load_settings_from_cosmos(cosmos)
+    cfg = cosmos_settings if cosmos_settings else _load_config()
+    dgi_filters = cfg.get("dgi_screener", {}).get("filters", {})
+
     result = await asyncio.get_event_loop().run_in_executor(
-        None, analyze_single_symbol, symbol
+        None, analyze_single_symbol, symbol, dgi_filters
     )
 
     error = result.get("error") if isinstance(result, dict) else "Analysis failed"
@@ -2492,16 +2498,16 @@ async def dgi_analyze_symbol(request: Request, symbol: str):
     })
 
 
-@app.get("/api/dgi/top20")
-async def api_dgi_top20(request: Request):
-    """Return the DGI top 20 as JSON."""
+@app.get("/api/dgi/top")
+async def api_dgi_top(request: Request):
+    """Return the DGI top entries as JSON."""
     cosmos = getattr(request.app.state, "cosmos", None)
     if cosmos is None:
         return JSONResponse({"error": "CosmosDB not available"}, status_code=503)
     try:
-        top20 = cosmos.get_dgi_top20()
-        top20.sort(key=lambda x: x.get("rank", 999))
-        return JSONResponse({"top20": top20})
+        entries = cosmos.get_dgi_top()
+        entries.sort(key=lambda x: x.get("rank", 999))
+        return JSONResponse({"top": entries})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -41,11 +41,15 @@ def _load_symbols(symbols_str: str) -> list[str]:
     return symbols
 
 
-def analyze_single_symbol(symbol: str) -> dict:
+def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
     """Run the DGI scoring pipeline for a single symbol (no CosmosDB writes).
 
     Returns a dict with metrics, technicals, quality score breakdown,
     category, and entry tag — or an ``"error"`` key on failure.
+
+    Args:
+        symbol: Ticker symbol to analyze.
+        filters: Optional filter overrides (from config.yaml dgi_screener.filters).
     """
     from .yfinance_fetcher import YFinanceFetcher
     from . import dgi_metrics
@@ -120,7 +124,7 @@ def analyze_single_symbol(symbol: str) -> dict:
         entry_tag = "Wait"
 
     category = dgi_metrics.categorize_stock(metrics)
-    passes_filters = dgi_metrics.passes_minimum_filters(metrics)
+    passes_filters = dgi_metrics.passes_minimum_filters(metrics, filters)
 
     return {
         "symbol": symbol,
@@ -306,28 +310,28 @@ async def run_dgi_screener(config, cosmos) -> dict:
         entry["category"] = dgi_metrics.categorize_stock(entry["metrics"])
 
     # 8. Update days_on_list
-    previous_top20 = {}
+    previous_top = {}
     try:
-        prev_docs = cosmos.get_dgi_top20()
+        prev_docs = cosmos.get_dgi_top()
         for doc in prev_docs:
             sym = doc.get("symbol", "")
             if sym:
-                previous_top20[sym] = doc
+                previous_top[sym] = doc
     except Exception as e:
-        logger.warning("Could not load previous top 20: %s", e)
+        logger.warning("Could not load previous top entries: %s", e)
 
     new_symbols = []
     dropped_symbols = []
     current_symbols = {e["symbol"] for e in top_entries}
-    prev_symbols = set(previous_top20.keys())
+    prev_symbols = set(previous_top.keys())
 
     today_str = now.strftime("%Y-%m-%d")
     MAX_SCORE_HISTORY = 90
 
     for entry in top_entries:
         sym = entry["symbol"]
-        if sym in previous_top20:
-            prev = previous_top20[sym]
+        if sym in previous_top:
+            prev = previous_top[sym]
             entry["days_on_list"] = prev.get("days_on_list", 0) + 1
             entry["first_appeared"] = prev.get("first_appeared", run_date)
 
@@ -363,9 +367,9 @@ async def run_dgi_screener(config, cosmos) -> dict:
             else 0
         )
         doc = {
-            "id": f"top20_{entry['symbol']}",
+            "id": f"top_{entry['symbol']}",
             "symbol": entry["symbol"],
-            "doc_type": "dgi_top20",
+            "doc_type": "dgi_top",
             "rank": entry["rank"],
             "quality_score": entry["quality_score"],
             "entry_tag": entry.get("entry_tag", ""),
@@ -382,7 +386,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
         docs_to_upsert.append(doc)
 
     try:
-        cosmos.upsert_dgi_top20(docs_to_upsert)
+        cosmos.upsert_dgi_top(docs_to_upsert)
         if dropped_symbols:
             cosmos.delete_dgi_dropped(dropped_symbols)
         logger.info("DGI Screener: wrote %d entries, dropped %d",

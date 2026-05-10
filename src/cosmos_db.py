@@ -1071,13 +1071,13 @@ class CosmosDBService:
 
     # ── DGI Screener ──────────────────────────────────────────────────
 
-    def get_dgi_top20(self) -> list[dict]:
-        """Get current DGI top 20 entries from the dgi_screener container."""
+    def get_dgi_top(self) -> list[dict]:
+        """Get current DGI top entries from the dgi_screener container."""
         if self.dgi_screener_container is None:
             return []
         try:
             query = (
-                "SELECT * FROM c WHERE c.doc_type = 'dgi_top20' "
+                "SELECT * FROM c WHERE c.doc_type = 'dgi_top' "
                 "ORDER BY c.rank ASC"
             )
             return list(self.dgi_screener_container.query_items(
@@ -1085,11 +1085,11 @@ class CosmosDBService:
                 enable_cross_partition_query=True,
             ))
         except Exception as exc:
-            logger.warning("Failed to read DGI top 20: %s", exc)
+            logger.warning("Failed to read DGI top entries: %s", exc)
             return []
 
-    def upsert_dgi_top20(self, entries: list) -> None:
-        """Upsert each top 20 entry (id: top20_{symbol})."""
+    def upsert_dgi_top(self, entries: list) -> None:
+        """Upsert each DGI top entry (id: top_{symbol})."""
         if self.dgi_screener_container is None:
             logger.warning("DGI Screener container unavailable — skipping upsert")
             return
@@ -1109,7 +1109,7 @@ class CosmosDBService:
         for symbol in symbols:
             try:
                 self.dgi_screener_container.delete_item(
-                    item=f"top20_{symbol}",
+                    item=f"top_{symbol}",
                     partition_key=symbol,
                 )
             except CosmosResourceNotFoundError:

@@ -345,7 +345,7 @@ All data is stored in Azure CosmosDB across four containers:
 
 | Document Type | Purpose | Growth |
 |---|---|---|
-| `dgi_top20` | Current Top 20 DGI entries — composite score, category, metrics | Static (replaced each run) |
+| `dgi_top` | Current top DGI entries — composite score, category, metrics | Static (replaced each run) |
 | `dgi_snapshot` | Daily snapshots for historical tracking of screener results | ~1/day per symbol |
 
 On first run, configuration from `config.yaml` is seeded into the `settings` container (except `azure` and `cosmosdb` sections which remain file-only). On subsequent runs, new keys from `config.yaml` are added to CosmosDB, but existing values are never overwritten, allowing the Settings UI to persist changes. The Settings UI reads and writes directly to CosmosDB, making configuration changes immediately available to all components (scheduler, telegram notifier, web UI) without restart. If CosmosDB is unavailable, `config.yaml` serves as the fallback.
@@ -559,8 +559,8 @@ The DGI Screener uses **yfinance** for all data fetching — this is independent
 
 DGI Screener results are stored in the CosmosDB `dgi_screener` container (partition key: `/symbol`) with two document types:
 
-- **`dgi_top20`** — Current Top 20 entries. Replaced on each screener run with the latest rankings, scores, categories, and metrics.
-- **`dgi_snapshot`** — Daily snapshots preserving historical screener results for trend tracking (e.g., how long a stock has been in the Top 20).
+- **`dgi_top`** — Current top entries. Replaced on each screener run with the latest rankings, scores, categories, and metrics.
+- **`dgi_snapshot`** — Daily snapshots preserving historical screener results for trend tracking (e.g., how long a stock has been in the top list).
 
 ### Scheduling
 
@@ -631,7 +631,7 @@ The DGI Screener runs a 10-step pipeline:
 7. **Select Top N** — rank by score, keep top 20 (configurable)
 8. **Categorize** — assign category based on metrics (Aristocrat, Rising Star, etc.)
 9. **Update days_on_list** — persist consecutive appearance count across runs
-10. **Write to CosmosDB** — upsert `dgi_top20` documents + append `dgi_snapshot` for the day
+10. **Write to CosmosDB** — upsert `dgi_top` documents + append `dgi_snapshot` for the day
 
 ## Project Structure
 
