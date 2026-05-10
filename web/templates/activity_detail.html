@@ -172,10 +172,9 @@
             {% else %}{{ sv.challenge_strength }}
             {% endif %}
         </span>
-        <span class="review-toggle" id="supervisor-toggle">{% if sv.challenge_strength|upper == 'WEAK' %}▶{% else %}▼{% endif %}</span>
+        <span class="review-toggle" id="supervisor-toggle">▼</span>
     </div>
-    <div class="review-body" id="supervisor-body"
-         {% if sv.challenge_strength|upper == 'WEAK' %}style="display:none;"{% endif %}>
+    <div class="review-body" id="supervisor-body">
         {% if sv.counter_arguments %}
         <ol class="review-arguments">
             {% for arg in sv.counter_arguments %}
