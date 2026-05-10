@@ -1527,3 +1527,50 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 **Files Modified**: `web/templates/dgi_screener.html`, `web/templates/chat.html`
 
 **Pattern**: Redirect-to-form-with-auto-submit is cleaner than duplicating analysis logic. The chat page owns the Quick Analysis flow; DGI just bootstraps it with params.
+
+### DGI Screener Top 40 + Interactive Filters (2026-05-10)
+- **Part 1: Expanded from top 20 to top 40**
+  - Changed `src/dgi_screener.py` line 49: `top_n` default from 20 → 40
+  - Updated `web/templates/dgi_screener.html` subtitle: "Top 20" → "Top 40"
+  - Kept doc IDs (`top20_*`) and variable names (`top20`) unchanged for backward compatibility — changing IDs would orphan existing Cosmos docs
+
+- **Part 2: Added interactive slider filters**
+  - Filter panel sits above the table in a collapsible card
+  - 5 range sliders (0-100 scale):
+    - Quality Score ≥ (direct filter on `entry.quality_score`)
+    - Div Yield ≥ (slider/10 = 0%-10%+ filter on `metrics.dividend_yield`)
+    - Div Growth ≥ (slider maps to 0%-100% CAGR filter on `metrics.dividend_cagr_5y * 100`)
+    - Years ≥ (direct filter on `metrics.years_consecutive_increases`)
+    - Timing ≥ (direct filter on `technicals.score`)
+  - Real-time updates: `oninput` event triggers `applyFilters()` JS function
+  - Displays "Showing X of Y stocks" count that updates dynamically
+  - Reset button sets all sliders back to 0
+  - Client-side filtering: reads `data-entry` JSON attribute on each table row, toggles `display: none` vs `display: table-row`
+  - Sorting still works on filtered rows — sort maintains filter state by preserving display property
+  - Detail modal (click on row), ▶ (analyze), and ➕ (add to watchlist) buttons all work on filtered rows
+
+- **CSS**: Added `.range-slider` styling in `web/static/style.css` for dark theme compatibility (WebKit + Firefox)
+  - 6px track height, `var(--border)` background, `var(--accent-blue)` thumb
+  - Hover effect: slightly lighter blue + scale(1.1) on thumb
+
+- **Key Pattern**: Client-side filtering with JSON data attributes
+  - Each row already had `data-entry='{{ entry | tojson | e }}'` for the detail modal
+  - Reused this for filtering — no need for server-side API or extra data structures
+  - Filter panel uses collapsible card (click header to toggle visibility)
+  - Real-time slider updates give instant feedback without jarring full page reloads
+
+**Files Modified**: `src/dgi_screener.py`, `web/templates/dgi_screener.html`, `web/static/style.css`
+
+### Exchange Code Normalization (2026-05-10)
+- **Issue**: yfinance returns exchange codes (NYQ, NMS, NGM, PCX, BTS, etc.) that are incompatible with TradingView
+- **Solution**: Added `EXCHANGE_MAP` + `_normalize_exchange()` in `src/dgi_screener.py` to normalize at the source when building metrics
+- **JS cleanup**: Removed duplicate `marketMap` from `dgi_screener.html` ▶ button handler; fixed ➕ button's hardcoded `data-exchange="NYSE"` to use actual `entry.exchange`
+- **Key Principle**: Normalize data at the source (Python screener) rather than patching downstream (JS template)
+- **Files Modified**: `src/dgi_screener.py`, `web/templates/dgi_screener.html`
+
+### DGI Top N Settings UI (2026-05-10)
+- **Feature**: Exposed `top_n` (number of stocks in DGI top list) as a configurable setting in the Settings → Configuration page
+- **Architecture**: `dgi_screener.py` already reads `dgi_config.get("top_n", 40)` — no backend change needed. Only added the UI plumbing to persist and display the value.
+- **Settings pattern**: Settings flow is: form POST → save to CosmosDB + config.yaml → re-read for display. Each new field needs: (1) template input, (2) GET handler pass-through, (3) POST handler parse/validate/save, (4) post-save re-read pass-through.
+- **Key files**: `web/app.py` (settings_config_page + settings_config_save), `web/templates/settings_config.html` (DGI Screener subsection)
+- **Validation**: Clamped to 1–500, defaults to 40 on invalid input, consistent with how `summary_activity_count` is validated (clamp + fallback).

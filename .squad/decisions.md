@@ -2942,3 +2942,121 @@ Added `send_prolonged_wait_alert()` to `TelegramNotifier` — dedicated format w
 - Uses `include_alerts=True` when fetching activities so any real alert disqualifies prolonged WAIT
 - Error activities also disqualify (checked via `act.get("error")`)
 
+---
+
+## 23. DGI Screener: Top 40 + Interactive Filters
+
+**Date:** 2026-05-10  
+**Author:** Linus (Quant Dev)  
+**Status:** Implemented
+
+### Decision
+
+Expanded DGI screener from top 20 to top 40 stocks and added client-side interactive slider filters.
+
+### Context
+
+- User requested increasing the screened stock count to provide more investment opportunities
+- Filtering capability was needed to let users narrow down the expanded list based on key metrics
+- Client-side filtering was preferred to avoid additional API calls and provide instant feedback
+
+### Implementation
+
+#### Part 1: Top 20 → Top 40
+- Changed default `top_n` from 20 to 40 in `src/dgi_screener.py`
+- Updated UI subtitle in `web/templates/dgi_screener.html`
+- **Preserved backward compatibility**: Cosmos document IDs still use `top20_*` prefix to avoid orphaning existing docs
+
+#### Part 2: Interactive Filters
+- Added collapsible filter panel above the table with 5 range sliders (0-100 scale):
+  - **Quality Score ≥**: Direct filter on `entry.quality_score`
+  - **Div Yield ≥**: Slider/10 maps to 0%-10%+ filter on `metrics.dividend_yield`
+  - **Div Growth ≥**: Slider maps to 0%-100% CAGR filter on `metrics.dividend_cagr_5y * 100`
+  - **Years ≥**: Direct filter on `metrics.years_consecutive_increases`
+  - **Timing ≥**: Direct filter on `technicals.score`
+
+- **Client-side filtering**: Leverages existing `data-entry='{{ entry | tojson | e }}'` attributes on table rows
+- **Real-time updates**: `oninput` events trigger filter recalculation instantly
+- **Dynamic count**: "Showing X of Y stocks" updates as sliders move
+- **Sorting compatibility**: Sorting maintains filter state by preserving row display property
+- **All features preserved**: Detail modal, ▶ (analyze), ➕ (add to watchlist) work on filtered rows
+
+#### CSS Styling
+- Added `.range-slider` styling for dark theme consistency
+- WebKit + Firefox compatible
+- Uses existing CSS variables (`--accent-blue`, `--border`, etc.)
+- Hover effects for better UX (thumb scale + color change)
+
+### Rationale
+
+1. **Backward compatibility**: Kept doc IDs unchanged because changing them would orphan existing Cosmos documents
+2. **Client-side filtering**: No server round-trips = instant response, better UX
+3. **Data reuse**: Leveraged existing `data-entry` JSON attributes instead of duplicating data
+4. **Collapsible panel**: Keeps UI clean when filters aren't needed
+5. **Real-time feedback**: Slider `oninput` events provide immediate visual feedback
+
+### Trade-offs
+
+- **Variable names still say `top20`**: Could rename, but it's purely cosmetic and would touch many places for no functional benefit
+- **Doc IDs still say `top20_*`**: Intentionally preserved for backward compatibility — changing would break existing Cosmos references
+- **Client-side only**: Filters don't persist across page reloads (but this matches user expectations for exploratory filtering)
+
+### Files Modified
+
+- `src/dgi_screener.py` — Changed `top_n` default
+- `web/templates/dgi_screener.html` — Added filter panel + JavaScript filtering logic
+- `web/static/style.css` — Added range slider styling
+
+### Pattern for Future
+
+**Client-side filtering with JSON data attributes** is a powerful pattern when:
+- Dataset is small enough to send to client (< 100 rows)
+- Filters are exploratory (don't need persistence)
+- Real-time feedback is valuable
+- Existing rows already have structured data in attributes
+
+This avoids the complexity of server-side filtering APIs while providing excellent UX.
+
+---
+
+## 24. Decision: Normalize exchange codes at the Python source
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-10  
+**Status:** Implemented  
+
+### Context
+yfinance returns internal exchange codes (NYQ, NMS, NGM, PCX, BTS, etc.) that don't match TradingView market names. The JS template had a band-aid `marketMap` to translate these, but the ➕ (add to watchlist) button still had `data-exchange="NYSE"` hardcoded.
+
+### Decision
+Normalize exchange codes in `src/dgi_screener.py` via an `EXCHANGE_MAP` dict applied when building the metrics dict. This means all downstream consumers (Cosmos docs, templates, chat redirects, watchlist adds) automatically get correct TradingView-compatible exchange names.
+
+### Consequences
+- **Template simplification**: JS-side mapping removed; both ▶ and ➕ buttons now use the already-normalized `entry.exchange` value.
+- **Backward compatible**: Unknown exchange codes pass through as-is; empty codes default to "NYSE".
+- **Existing Cosmos docs**: Will be updated on next screener run. Until then, old docs may still have raw yfinance codes.
+- **If new exchanges appear**: Just add them to `EXCHANGE_MAP` in one place.
+
+---
+
+## 25. Decision: DGI `top_n` exposed in Settings UI
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-10  
+
+### Context
+The DGI screener's `top_n` parameter (how many top-ranked stocks to keep) was hardcoded as a default of 40 with no UI to change it. User requested it be configurable from the Settings page.
+
+### Decision
+- Added a numeric input ("Number of stocks in Top list") to the DGI Screener section of Settings → Configuration
+- Value is persisted to both CosmosDB and config.yaml, following the existing dual-write pattern
+- Validated/clamped to 1–500 on the server side, defaults to 40 on invalid input
+- No changes to `dgi_screener.py` — it already reads `dgi_config.get("top_n", 40)`
+
+### Files Changed
+- `web/templates/settings_config.html` — new numeric input field
+- `web/app.py` — GET handler (pass `dgi_top_n` to template), POST handler (parse, validate, save)
+
+### Rationale
+Follows the same pattern as `summary_activity_count`: numeric input with server-side clamping. Keeps the default at 40 so existing deployments are unaffected.
+
