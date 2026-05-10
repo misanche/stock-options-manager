@@ -1231,3 +1231,99 @@ The DGI screener's ▶ (analyze) button now redirects to the Chat page's Quick A
 - Could extend this pattern to other screeners/tables (e.g., watchlist, positions)
 - Could add more URL params (e.g., `auto_submit=true` flag instead of implicit behavior)
 - Exchange mapping could be centralized if needed elsewhere (currently inline in DGI screener JS)
+# Decision: Chat View Output Format - Section-Based Cards vs Markdown Tables
+
+**Date**: 2026-05-11  
+**Author**: Linus (Quant Dev)  
+**Status**: Implemented  
+**Context**: Chat UI rendering optimization  
+
+## Problem
+
+Decision Summary tables in chat agent responses (covered calls, cash-secured puts) rendered poorly in chat bubbles:
+- Wide 2-column markdown tables (`| Factor | Assessment |`) with long multi-line content using `<br>` tags
+- Chat bubbles have constrained width, making wide tables cramped and hard to read
+- `<br>` tags in markdown table cells are a hack that doesn't flow naturally
+- Poor responsive behavior at different screen widths
+
+## Decision
+
+**Replace markdown table format with section-based card format** for Decision Summaries in chat agent prompts.
+
+### Old Format (Markdown Table)
+```markdown
+## 📊 Decision Summary
+
+| Factor | Assessment |
+|--------|------------|
+| **Overall Recommendation** | Cautiously Favorable |
+| **Key Reasons AGAINST** | • Risk 1<br>• Risk 2<br>• Risk 3 |
+| **Suggested Strikes** | $435: Reasoning<br>$440: Alternative |
+```
+
+### New Format (Section-Based Cards)
+```markdown
+## 📊 Decision Summary
+
+**🎯 Overall Recommendation:** Cautiously Favorable for selling covered calls
+
+---
+
+**⚠️ Key Reasons AGAINST Selling:**
+- Risk 1 — specific detail
+- Risk 2 — specific detail
+- Risk 3 if applicable
+
+**💰 Suggested Strike Prices:**
+- **$435 strike** (0.20 delta, OTM): Reasoning here
+- **$440 strike** (0.15 delta, further OTM): Alternative
+```
+
+## Rationale
+
+1. **Responsive**: Section-based format adapts to any chat bubble width without horizontal scrolling
+2. **Readability**: Bullet lists are more natural than `<br>`-separated items in table cells
+3. **Visual Hierarchy**: Emoji prefixes + markdown headers create clear visual sections
+4. **Maintainability**: Easier for AI to generate — no need to manage table alignment or worry about `<br>` placement
+5. **Content Preservation**: All the same information, just better formatted for the chat UI
+
+## Implementation
+
+- Updated prompt templates in `src/tv_open_call_chat_instructions.py` and `src/tv_open_put_chat_instructions.py`
+- Changed both the format specification (template section) AND the example response
+- Preserved strategy-specific differences (PUT uses "Assignment Readiness", CALL uses "Profit Target")
+- Added CSS improvements to `web/static/style.css` for tables that remain (options chain in reports):
+  - Horizontal scrolling support
+  - Better dark theme colors
+  - Alternating row backgrounds
+  - Improved `<br>` tag spacing in cells
+- Added formatting note to `src/tv_report_instructions.py` to avoid `<br>` in new tables
+
+## Scope
+
+**What Changed**:
+- Chat agent output format for Decision Summaries (CALL and PUT)
+- CSS for all tables in chat bubbles
+
+**What Did NOT Change**:
+- Strategy assessment logic or gate criteria
+- Content guidelines (what to include in each section)
+- Report agent tables (options chain, etc.) — those keep table format but with improved CSS
+
+## Team Impact
+
+- **Frontend/UI**: Chat views will render decision summaries more cleanly
+- **AI Prompts**: Future prompt changes should use this section-based format for chat outputs
+- **Reports**: Report agent continues to use compact markdown tables (appropriate for that context)
+
+## Pattern for Future Reference
+
+**Use section-based card format when**:
+- Output appears in constrained-width UI (chat bubbles, mobile)
+- Content has multi-line items within categories
+- Visual scanning is important
+
+**Use markdown tables when**:
+- Displaying tabular data (options chains, dividend history)
+- Fixed-width layout is available (reports, full-page views)
+- Keep columns narrow; avoid `<br>` in cells (use multiple rows instead)

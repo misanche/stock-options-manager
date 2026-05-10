@@ -1574,3 +1574,25 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - **Settings pattern**: Settings flow is: form POST → save to CosmosDB + config.yaml → re-read for display. Each new field needs: (1) template input, (2) GET handler pass-through, (3) POST handler parse/validate/save, (4) post-save re-read pass-through.
 - **Key files**: `web/app.py` (settings_config_page + settings_config_save), `web/templates/settings_config.html` (DGI Screener subsection)
 - **Validation**: Clamped to 1–500, defaults to 40 on invalid input, consistent with how `summary_activity_count` is validated (clamp + fallback).
+
+### Chat Table Rendering Fix (2026-05-11)
+- **Problem**: Decision Summary tables in chat views render poorly. Wide 2-column markdown tables with `<br>` tags get cramped in chat bubbles.
+- **Solution Part 1 — CSS Improvements** (`web/static/style.css` lines ~558-573):
+  - Made tables scrollable: Added `display: block; overflow-x: auto;` to table
+  - Improved padding: Increased from `0.35em 0.6em` to `0.5em 0.75em`
+  - Dark theme: Changed header background from `rgba(0,0,0,0.2)` to `var(--surface-elevated)` with improved contrast
+  - Readability: Added alternating row colors (`nth-child(odd)` and `nth-child(even)`) with subtle backgrounds
+  - `<br>` tag spacing: Added rule for `td br` to create proper spacing between lines (`margin: 0.35em 0`)
+  - Visual hierarchy: Increased header font-weight from 500 to 600
+- **Solution Part 2 — Prompt Format Change**:
+  - **Old format**: 2-column markdown tables with `| Factor | Assessment |` and `<br>` tags for multi-line content
+  - **New format**: Section-based card format using markdown headers (`##`, `**`), bullet lists, and emoji prefixes
+  - **Benefits**: Renders cleanly at any width, no `<br>` hacks needed, better visual scanning in chat bubbles
+  - **Files changed**:
+    - `src/tv_open_call_chat_instructions.py`: Updated format template (lines ~183-205) and example response (lines ~280-292)
+    - `src/tv_open_put_chat_instructions.py`: Updated format template (lines ~147-169) and example response (lines ~247-259)
+    - Preserved all content guidelines — only changed OUTPUT FORMAT, not strategy logic
+    - Differences preserved: PUT file keeps "Assignment Readiness" row instead of "Profit Target / Exit Plan"
+  - `src/tv_report_instructions.py`: Added note in FORMATTING RULES: "For tables in chat views: Keep tables compact. Use narrow columns. Avoid `<br>` tags in cells — use multiple rows instead."
+- **Key Pattern**: Chat bubbles need formats optimized for variable width. Section-based markdown (headers + lists) adapts better than wide tables with multi-line cells. CSS improvements help tables that remain (like options chain in reports).
+- **Files Modified**: `web/static/style.css`, `src/tv_open_call_chat_instructions.py`, `src/tv_open_put_chat_instructions.py`, `src/tv_report_instructions.py`
