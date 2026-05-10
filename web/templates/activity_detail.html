@@ -234,6 +234,16 @@
             {% if av.alternative.premium_comparison %}
             <div class="alpha-premium">💰 {{ av.alternative.premium_comparison }}</div>
             {% endif %}
+            {% if av.alternative.strike or av.alternative.expiration or av.alternative.premium %}
+            <div class="alpha-trade-details" style="margin: 8px 0; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; font-family: monospace; font-size: 0.9em;">
+                📋 <strong>Alternative contract:</strong>
+                {% if av.alternative.strike %} Strike: ${{ av.alternative.strike }}{% endif %}
+                {% if av.alternative.expiration %} · Exp: {{ av.alternative.expiration }}{% endif %}
+                {% if av.alternative.dte %} ({{ av.alternative.dte }} DTE){% endif %}
+                {% if av.alternative.premium %} · Premium: ${{ av.alternative.premium }}{% endif %}
+                {% if av.alternative.delta %} · Δ {{ av.alternative.delta }}{% endif %}
+            </div>
+            {% endif %}
             {% if av.alternative.additional_risk %}
             <div class="alpha-risk">⚠️ Risk: {{ av.alternative.additional_risk }}</div>
             {% endif %}
@@ -373,6 +383,13 @@ function openRecommendationModal(sourceAgent) {
     if (sourceAgent === 'alpha_advisor' && activityData.alpha_view) {
         var av = activityData.alpha_view;
         if (av.alternative && av.alternative.action) recText += '→ ' + av.alternative.action;
+        if (av.alternative && av.alternative.strike) {
+            recText += '\n📋 Strike: $' + av.alternative.strike;
+            if (av.alternative.expiration) recText += ' · Exp: ' + av.alternative.expiration;
+            if (av.alternative.dte) recText += ' (' + av.alternative.dte + ' DTE)';
+            if (av.alternative.premium) recText += ' · Premium: $' + av.alternative.premium;
+            if (av.alternative.delta) recText += ' · Δ ' + av.alternative.delta;
+        }
         if (av.alternative && av.alternative.premium_comparison) recText += '\n💰 ' + av.alternative.premium_comparison;
         if (av.alternative && av.alternative.rationale) recText += '\n📊 ' + av.alternative.rationale;
     } else if (sourceAgent === 'supervisor') {

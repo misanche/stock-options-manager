@@ -67,6 +67,42 @@ ALPHA_OUTPUT_SCHEMA = {
                         "alternative (e.g. '$0.45 vs. $1.65 — 3.7x more premium')."
                     ),
                 },
+                "strike": {
+                    "type": "number",
+                    "description": (
+                        "The recommended strike price for the alternative. "
+                        "Required when suggesting a different strike."
+                    ),
+                },
+                "expiration": {
+                    "type": "string",
+                    "description": (
+                        "The recommended expiration date (YYYY-MM-DD) for "
+                        "the alternative. Required when suggesting a "
+                        "different expiration."
+                    ),
+                },
+                "premium": {
+                    "type": "number",
+                    "description": (
+                        "The bid premium for the alternative contract, "
+                        "read from the options chain. Must match "
+                        "{puts|calls}[YYYYMMDD][strike][bid]."
+                    ),
+                },
+                "delta": {
+                    "type": "number",
+                    "description": (
+                        "The delta of the alternative contract, read from "
+                        "the options chain."
+                    ),
+                },
+                "dte": {
+                    "type": "integer",
+                    "description": (
+                        "Days to expiration for the alternative contract."
+                    ),
+                },
             },
             "required": ["action", "rationale", "additional_risk", "premium_comparison"],
         },
@@ -429,7 +465,12 @@ outside the JSON):
         "action": "What the premium-optimized alternative recommends",
         "rationale": "Technical/quantitative evidence supporting this",
         "additional_risk": "What extra risk this carries",
-        "premium_comparison": "Conservative: $X (Y%/mo) vs. Alternative: $A (B%/mo)"
+        "premium_comparison": "Conservative: $X (Y%/mo) vs. Alternative: $A (B%/mo)",
+        "strike": 52.5,
+        "expiration": "2026-06-20",
+        "premium": 1.65,
+        "delta": 0.32,
+        "dte": 35
     }}}}}}}},
     "one_liner": "Short summary suitable for Telegram notification"
 }}}}}}}}
@@ -439,6 +480,12 @@ outside the JSON):
 - `alternative`: Always present. For NONE results, explain why the
   conservative choice is already optimal (action = "Conservative choice
   is optimal", rationale = why, additional_risk = "N/A",
-  premium_comparison = "N/A — conservative premium is already excellent").
+  premium_comparison = "N/A — conservative premium is already excellent",
+  omit strike/expiration/premium/delta/dte).
+- `strike`, `expiration`, `premium`, `delta`, `dte`: **Required when
+  suggesting a different strike or expiration.** Values MUST be read from
+  the options chain — never invented. `premium` = bid price from
+  {{{{puts|calls}}}}["{{{{YYYYMMDD}}}}"]["{{{{strike}}}}"]["bid"].
+  Omit all five when `opportunity_strength` is `NONE`.
 - `one_liner`: Max 120 characters. Starts with the core insight.
 """
