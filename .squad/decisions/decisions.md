@@ -1180,3 +1180,54 @@ The DGI Screener section in README.md is structured as a self-contained referenc
 - README accurately reflects 8 agents, 4 containers, and the DGI investment strategy
 - Provision script creates all 4 containers in a single run
 - New contributors can understand DGI Screener without reading source code
+
+---
+
+# Decision: DGI Screener ▶ Button → Chat Quick Analysis
+
+**Date:** 2026-05-10  
+**Agent:** Linus  
+**Status:** Implemented  
+
+## Decision
+
+The DGI screener's ▶ (analyze) button now redirects to the Chat page's Quick Analysis mode instead of triggering the CSP analysis API in the background.
+
+## Rationale
+
+1. **Better UX**: Interactive chat analysis is more valuable than a background API call with no feedback
+2. **Centralization**: The chat page already has all the Quick Analysis infrastructure — reuse rather than duplicate
+3. **Flexibility**: Users can interact with the analysis, ask follow-ups, adjust parameters
+
+## Implementation Details
+
+**DGI Screener** (`web/templates/dgi_screener.html`):
+- Button redirects to `/chat?mode=quick-analysis&symbol=XXX&market=YYY&option_type=put`
+- Added Yahoo Finance exchange code mapping (NYQ→NYSE, NMS→NASDAQ, etc.)
+- Market/exchange extracted from row's `data-entry` JSON (entry.exchange)
+
+**Chat Page** (`web/templates/chat.html`):
+- Detects URL params on load
+- Pre-fills form and auto-starts `fetchAndAnalyze()` if params present
+- User lands on chat page with analysis already running
+
+## Technical Notes
+
+- **Exchange Mapping Required**: Yahoo Finance returns codes (NYQ, NMS) but TradingView expects full names (NYSE, NASDAQ)
+- **Option Type Default**: Always pre-selects "put" for DGI screener (cash-secured put strategy)
+- **No Breaking Changes**: ➕ (add to watchlist) button and detail modal remain functional
+
+## Pattern
+
+**Redirect-to-Form-with-Auto-Submit**: When multiple features need similar functionality, redirect to the canonical implementation with URL params rather than duplicating logic. The receiving page owns the flow; the sender just bootstraps with context.
+
+## Files Modified
+
+- `web/templates/dgi_screener.html` — button click handler
+- `web/templates/chat.html` — URL param detection & auto-start
+
+## Future Considerations
+
+- Could extend this pattern to other screeners/tables (e.g., watchlist, positions)
+- Could add more URL params (e.g., `auto_submit=true` flag instead of implicit behavior)
+- Exchange mapping could be centralized if needed elsewhere (currently inline in DGI screener JS)

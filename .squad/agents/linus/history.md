@@ -1495,3 +1495,35 @@ Fixed 3 critical issues in DGI screener:
 Files modified: `web/templates/dgi_screener.html`, `src/yfinance_fetcher.py`
 
 Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thresholds 0.015, 0.02). Verify accuracy after next screener run.
+
+---
+
+## 2026-05-10: DGI Screener ▶ Button → Chat Quick Analysis Redirect
+
+✅ **Complete**
+
+**Problem**: DGI screener ▶ (analyze) button triggered CSP analysis API in background. User wanted it to redirect to Chat page's Quick Analysis mode instead for interactive analysis.
+
+**Solution**: 
+1. **DGI Screener** (`web/templates/dgi_screener.html`):
+   - Replaced `.btn-dgi-analyze` click handler (lines 123-153)
+   - Now redirects to `/chat?mode=quick-analysis&symbol=XXX&market=YYY&option_type=put`
+   - Added Yahoo Finance exchange code mapping (NYQ→NYSE, NMS→NASDAQ, etc.) since YFinance returns codes but chat expects full names
+   - Preserves ➕ (add to watchlist) button and detail modal functionality
+
+2. **Chat Page** (`web/templates/chat.html`):
+   - Added URL parameter detection on page load
+   - If `mode=quick-analysis` + `symbol` + `market` + `option_type` params present:
+     - Pre-fills form fields
+     - Auto-calls `selectMode('quick-analysis')`
+     - Auto-triggers `fetchAndAnalyze()` after 100ms delay
+   - User lands on chat page and analysis starts automatically
+
+**Key Learnings**:
+- Yahoo Finance returns exchange codes (NYQ, NMS, NGM, etc.) but TradingView/chat expects full names (NYSE, NASDAQ)
+- Chat page already had all the infrastructure for Quick Analysis — just needed URL param hookup
+- URLSearchParams makes redirect-with-params UX trivial
+
+**Files Modified**: `web/templates/dgi_screener.html`, `web/templates/chat.html`
+
+**Pattern**: Redirect-to-form-with-auto-submit is cleaner than duplicating analysis logic. The chat page owns the Quick Analysis flow; DGI just bootstraps it with params.
