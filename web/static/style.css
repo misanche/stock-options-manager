@@ -1075,6 +1075,9 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
 .badge-cat-high-yield  { background: rgba(0,168,126,0.2);   color: var(--accent-green); }
 .badge-cat-balanced    { background: rgba(141,150,158,0.2); color: var(--text-muted); }
 
+.actions-cell { white-space: nowrap; display: flex; gap: 0.3rem; }
+.btn-dgi-add { font-size: 0.75rem; }
+
 .score-bar {
     display: inline-block; width: 48px; height: 6px;
     background: var(--bg-input); border-radius: 3px; vertical-align: middle; margin-right: 0.4rem;

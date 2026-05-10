@@ -46,6 +46,7 @@
                 <th class="sortable" data-col="years_of_growth" data-type="num">Years <span class="sort-indicator">⇅</span></th>
                 <th class="sortable" data-col="days_on_list" data-type="num">Days on List <span class="sort-indicator">⇅</span></th>
                 <th class="sortable" data-col="technical_timing_score" data-type="num">Timing <span class="sort-indicator">⇅</span></th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -68,6 +69,10 @@
                 <td class="mono">{{ entry.years_of_growth | default('—') }}</td>
                 <td class="mono">{{ entry.days_on_list | default(0) }}</td>
                 <td class="mono">{{ "%.1f" | format(entry.technical_timing_score | default(0)) }}</td>
+                <td class="actions-cell">
+                    <button class="btn-trigger-row btn-dgi-analyze" data-symbol="{{ entry.symbol }}" title="Run CSP analysis for {{ entry.symbol }}">▶</button>
+                    <button class="btn-trigger-row btn-dgi-add" data-symbol="{{ entry.symbol }}" data-exchange="NYSE" title="Add {{ entry.symbol }} to watchlist with CSP enabled">➕</button>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -111,6 +116,87 @@
             btn.classList.replace('running','error');
         }
     };
+
+    /* ── Quick Analysis (CSP) per row ── */
+    document.querySelectorAll('.btn-dgi-analyze').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var symbol = btn.dataset.symbol;
+            var orig = btn.textContent;
+            btn.textContent = '⏳';
+            btn.disabled = true;
+            btn.classList.add('running');
+
+            fetch('/api/trigger/cash_secured_put', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: symbol })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                btn.textContent = data.status === 'triggered' ? '✓' : '✗';
+                btn.classList.remove('running');
+                btn.classList.add(data.status === 'triggered' ? 'done' : 'error');
+            })
+            .catch(function() {
+                btn.textContent = '✗';
+                btn.classList.remove('running');
+                btn.classList.add('error');
+            })
+            .finally(function() {
+                setTimeout(function() { btn.textContent = orig; btn.disabled = false; btn.classList.remove('done','error'); }, 4000);
+            });
+        });
+    });
+
+    /* ── Add to watchlist with CSP enabled ── */
+    document.querySelectorAll('.btn-dgi-add').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var symbol = btn.dataset.symbol;
+            var exchange = btn.dataset.exchange || 'NYSE';
+            var orig = btn.textContent;
+            btn.textContent = '⏳';
+            btn.disabled = true;
+            btn.classList.add('running');
+
+            fetch('/api/symbols', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: symbol, exchange: exchange, cash_secured_put: true })
+            })
+            .then(function(res) {
+                if (res.status === 409) {
+                    btn.textContent = '✓';
+                    btn.title = symbol + ' already in watchlist';
+                    btn.classList.remove('running');
+                    btn.classList.add('done');
+                    return;
+                }
+                return res.json().then(function(data) {
+                    if (res.ok) {
+                        btn.textContent = '✓';
+                        btn.classList.remove('running');
+                        btn.classList.add('done');
+                        btn.title = symbol + ' added with CSP enabled';
+                    } else {
+                        btn.textContent = '✗';
+                        btn.classList.remove('running');
+                        btn.classList.add('error');
+                        btn.title = data.error || 'Failed';
+                    }
+                });
+            })
+            .catch(function() {
+                btn.textContent = '✗';
+                btn.classList.remove('running');
+                btn.classList.add('error');
+            })
+            .finally(function() {
+                setTimeout(function() { btn.textContent = orig; btn.disabled = false; btn.classList.remove('done','error'); }, 4000);
+            });
+        });
+    });
 
     /* ── Sortable table ── */
     var table = document.getElementById('dgiTable');
