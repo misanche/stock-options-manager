@@ -1596,3 +1596,21 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
   - `src/tv_report_instructions.py`: Added note in FORMATTING RULES: "For tables in chat views: Keep tables compact. Use narrow columns. Avoid `<br>` tags in cells — use multiple rows instead."
 - **Key Pattern**: Chat bubbles need formats optimized for variable width. Section-based markdown (headers + lists) adapts better than wide tables with multi-line cells. CSS improvements help tables that remain (like options chain in reports).
 - **Files Modified**: `web/static/style.css`, `src/tv_open_call_chat_instructions.py`, `src/tv_open_put_chat_instructions.py`, `src/tv_report_instructions.py`
+
+### DGI Score History Tracking (2026-05)
+- Added `score_history` field to DGI screener CosmosDB documents — a list of `{"date": "YYYY-MM-DD", "score": float}` entries tracking quality_score evolution over time.
+- Backend (`src/dgi_screener.py`): On each screener run, if a stock already exists in the top_n, the previous `score_history` is carried forward. New entry appended if date or score changed; same-day updates replace the last entry to avoid duplicates. New stocks get initialized with one entry. Capped at 90 entries.
+- The `score_history` field is persisted in the CosmosDB document alongside existing fields like `days_on_list` and `first_appeared`.
+- Frontend (`web/templates/dgi_screener.html`): Added Chart.js line chart in the detail modal showing score evolution. Dark-themed, 0-100 Y axis, responsive, ~200px height. Shows placeholder message when history has ≤1 entry.
+- API (`web/app.py`): No changes needed — `get_dgi_top20()` returns the full document, so `score_history` is automatically included in both the page template data and the `/api/dgi/top20` JSON endpoint.
+- **Key Pattern**: When tracking time-series in a document DB, cap the array length and use date-based dedup to keep documents bounded. The 90-entry cap matches the snapshot TTL.
+- **Files Modified**: `src/dgi_screener.py`, `web/templates/dgi_screener.html`
+
+### DGI Single-Symbol Analysis Page (2026-05)
+- Added `analyze_single_symbol(symbol)` to `src/dgi_screener.py` — runs the full DGI scoring pipeline for one ticker via `YFinanceFetcher.get_ticker_data()` without writing to CosmosDB. Returns metrics, technicals, quality score breakdown, category, entry tag, and filter pass/fail status.
+- Added `calculate_quality_score_detailed()` to `src/dgi_metrics.py` — same formula as `calculate_quality_score()` but returns all sub-scores (dividend_yield, dividend_growth, payout_safety, valuation, financial_health, consistency, technical_timing), weights, and health detail (D/E and ROE sub-scores separately). The original function remains unchanged for backward compat.
+- New route `GET /dgi/analyze/{symbol}` in `web/app.py` — runs analysis in an executor thread to avoid blocking the event loop. Returns `dgi_analysis.html` template.
+- New template `web/templates/dgi_analysis.html` — dark-themed, extends `base.html`. Shows overall quality score with progress bar, entry tag, category badge, price. Two-column layout: left = fundamental sub-scores with progress bars and raw values, right = technical timing sub-scores with detail. Radar chart (Chart.js) shows score contribution profile. Key metrics grid at bottom. Handles error states (invalid symbol, no data, no dividends).
+- "Analyze Symbol" button added next to "Run DGI Screener" on `web/templates/dgi_screener.html` with inline input field that navigates to `/dgi/analyze/{SYMBOL}`.
+- **Key Pattern**: When exposing scoring internals for a diagnostic/analysis view, create a `_detailed` variant of the scoring function rather than modifying the existing one — keeps the hot path lean and avoids breaking existing consumers.
+- **Files Modified**: `src/dgi_metrics.py`, `src/dgi_screener.py`, `web/app.py`, `web/templates/dgi_screener.html`, `web/templates/dgi_analysis.html` (new)

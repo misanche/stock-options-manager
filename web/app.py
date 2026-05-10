@@ -2464,6 +2464,34 @@ async def dgi_page(request: Request):
     })
 
 
+@app.get("/dgi/analyze/{symbol}", response_class=HTMLResponse)
+async def dgi_analyze_symbol(request: Request, symbol: str):
+    """DGI single-symbol analysis — detailed scoring breakdown (read-only)."""
+    import threading
+
+    symbol = symbol.strip().upper()
+    if not symbol or len(symbol) > 10:
+        return templates.TemplateResponse("dgi_analysis.html", {
+            "request": request,
+            "error": "Invalid symbol",
+            "result": None,
+        })
+
+    # Run the blocking yfinance fetch in a thread to avoid blocking the event loop
+    from src.dgi_screener import analyze_single_symbol
+
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, analyze_single_symbol, symbol
+    )
+
+    error = result.get("error") if isinstance(result, dict) else "Analysis failed"
+    return templates.TemplateResponse("dgi_analysis.html", {
+        "request": request,
+        "result": result if not error else None,
+        "error": error if error else None,
+    })
+
+
 @app.get("/api/dgi/top20")
 async def api_dgi_top20(request: Request):
     """Return the DGI top 20 as JSON."""

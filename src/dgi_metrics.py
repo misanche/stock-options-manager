@@ -335,6 +335,61 @@ def calculate_quality_score(
     return round(score, 2)
 
 
+def calculate_quality_score_detailed(
+    metrics: Dict[str, Any],
+    technical: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Like :func:`calculate_quality_score` but returns all sub-scores."""
+    yield_s = _dividend_yield_score(metrics.get("dividend_yield", 0))
+    growth_s = _dividend_growth_score(metrics.get("dividend_cagr_5y", 0))
+    payout_s = _payout_safety_score(metrics.get("payout_ratio", 1.0))
+    val_s = _valuation_score(metrics.get("pe_ratio", 30))
+    health_s = _financial_health_score(
+        metrics.get("debt_to_equity", 2.0),
+        metrics.get("roe", 0),
+    )
+    consist_s = _consistency_score(metrics.get("years_consecutive_increases", 0))
+    tech_s = technical.get("score", 0)
+
+    de_score = _clamp((2.0 - metrics.get("debt_to_equity", 2.0)) / 2.0 * 100)
+    roe_score = _clamp(metrics.get("roe", 0) / 0.30 * 100)
+
+    score = (
+        yield_s * 0.15
+        + growth_s * 0.18
+        + payout_s * 0.10
+        + val_s * 0.10
+        + health_s * 0.07
+        + consist_s * 0.10
+        + tech_s * 0.30
+    )
+    return {
+        "total": round(score, 2),
+        "sub_scores": {
+            "dividend_yield": round(yield_s, 1),
+            "dividend_growth": round(growth_s, 1),
+            "payout_safety": round(payout_s, 1),
+            "valuation": round(val_s, 1),
+            "financial_health": round(health_s, 1),
+            "consistency": round(consist_s, 1),
+            "technical_timing": round(tech_s, 1),
+        },
+        "weights": {
+            "dividend_yield": 0.15,
+            "dividend_growth": 0.18,
+            "payout_safety": 0.10,
+            "valuation": 0.10,
+            "financial_health": 0.07,
+            "consistency": 0.10,
+            "technical_timing": 0.30,
+        },
+        "health_detail": {
+            "debt_to_equity_score": round(de_score, 1),
+            "roe_score": round(roe_score, 1),
+        },
+    }
+
+
 # ======================================================================
 # Categorisation
 # ======================================================================

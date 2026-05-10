@@ -7,10 +7,20 @@
     <p class="subtitle">Top 40 Dividend Growth Stocks</p>
 </div>
 
-<div style="margin-bottom:1.5rem;">
+<div style="margin-bottom:1.5rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
     <button class="btn-trigger" id="btnRunDgi" onclick="triggerDgi()">
         🔄 Run DGI Screener
     </button>
+    <button class="btn-trigger" id="btnAnalyzeSymbol" onclick="showSymbolInput()" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text);">
+        🔍 Analyze Symbol
+    </button>
+    <form id="symbolInputForm" action="/dgi/analyze/" method="get" style="display:none; align-items:center; gap:0.5rem;" onsubmit="return navigateToAnalysis(event)">
+        <input type="text" id="analyzeSymbolInput" placeholder="Enter symbol (e.g. AAPL)" maxlength="10"
+               style="padding:0.5rem 0.75rem; border-radius:var(--radius); border:1px solid var(--border); background:var(--bg-input); color:var(--text); font-family:var(--font-mono); font-size:0.9rem; width:160px; text-transform:uppercase;"
+               autofocus>
+        <button type="submit" class="btn-trigger" style="padding:0.5rem 1rem;">Go</button>
+        <button type="button" class="btn-trigger" style="padding:0.5rem 0.75rem; background:var(--bg-input); border:1px solid var(--border); color:var(--text-muted);" onclick="hideSymbolInput()">✕</button>
+    </form>
 </div>
 
 {% if error %}
@@ -133,6 +143,25 @@
 <script>
 (function() {
     var _scoreChart = null;
+
+    /* ── Analyze Symbol Input Toggle ── */
+    window.showSymbolInput = function() {
+        document.getElementById('symbolInputForm').style.display = 'flex';
+        document.getElementById('btnAnalyzeSymbol').style.display = 'none';
+        document.getElementById('analyzeSymbolInput').focus();
+    };
+    window.hideSymbolInput = function() {
+        document.getElementById('symbolInputForm').style.display = 'none';
+        document.getElementById('btnAnalyzeSymbol').style.display = '';
+        document.getElementById('analyzeSymbolInput').value = '';
+    };
+    window.navigateToAnalysis = function(e) {
+        e.preventDefault();
+        var sym = document.getElementById('analyzeSymbolInput').value.trim().toUpperCase();
+        if (!sym) return false;
+        window.location.href = '/dgi/analyze/' + encodeURIComponent(sym);
+        return false;
+    };
     /* ── Filter Panel Toggle & Logic ── */
     window.toggleFilters = function() {
         var panel = document.getElementById('filterPanel');

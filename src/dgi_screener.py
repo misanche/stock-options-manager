@@ -41,6 +41,101 @@ def _load_symbols(symbols_str: str) -> list[str]:
     return symbols
 
 
+def analyze_single_symbol(symbol: str) -> dict:
+    """Run the DGI scoring pipeline for a single symbol (no CosmosDB writes).
+
+    Returns a dict with metrics, technicals, quality score breakdown,
+    category, and entry tag — or an ``"error"`` key on failure.
+    """
+    from .yfinance_fetcher import YFinanceFetcher
+    from . import dgi_metrics
+
+    symbol = symbol.strip().upper()
+    if not symbol:
+        return {"error": "No symbol provided"}
+
+    fetcher = YFinanceFetcher()
+    item = fetcher.get_ticker_data(symbol)
+    if item is None:
+        return {"error": f"No data available for {symbol}. Verify the ticker symbol is correct."}
+
+    info = item.get("info", {})
+    dividends = item.get("dividends")
+    history = item.get("history")
+
+    has_dividends = dividends is not None and not (
+        hasattr(dividends, "empty") and dividends.empty
+    )
+
+    years = dgi_metrics.calculate_years_consecutive_increases(dividends) if has_dividends else 0
+    cagr = dgi_metrics.calculate_dividend_cagr(dividends) if has_dividends else 0.0
+
+    metrics = {
+        "dividend_yield": info.get("dividendYield") or 0,
+        "dividend_cagr_5y": cagr,
+        "years_consecutive_increases": years,
+        "payout_ratio": info.get("payoutRatio") or 0,
+        "pe_ratio": info.get("trailingPE") or 0,
+        "forward_pe": info.get("forwardPE") or 0,
+        "debt_to_equity": (info.get("debtToEquity") or 0) / 100
+        if info.get("debtToEquity") and info["debtToEquity"] > 10
+        else (info.get("debtToEquity") or 0),
+        "roe": info.get("returnOnEquity") or 0,
+        "market_cap": info.get("marketCap") or 0,
+        "current_price": info.get("currentPrice")
+        or info.get("regularMarketPrice")
+        or 0,
+        "sector": info.get("sector", ""),
+        "exchange": _normalize_exchange(info.get("exchange", "")),
+    }
+
+    # Technical timing
+    if history is None or (hasattr(history, "empty") and history.empty):
+        technicals = {"score": 0, "sub_scores": {}}
+    else:
+        technicals = dgi_metrics.calculate_technical_timing_score(
+            history["Close"].values,
+            history["High"].values,
+            history["Low"].values,
+            metrics.get("current_price", 0),
+        )
+        if not isinstance(technicals, dict):
+            technicals = {"score": technicals}
+
+    # Quality score with detailed breakdown
+    quality_detail = dgi_metrics.calculate_quality_score_detailed(metrics, technicals)
+    quality_score = quality_detail["total"]
+
+    # Entry tag
+    tech_timing = technicals.get("score", 0)
+    if tech_timing >= 70:
+        entry_tag = "Strong Buy"
+    elif tech_timing >= 50:
+        entry_tag = "Buy"
+    elif tech_timing >= 35:
+        entry_tag = "Accumulate"
+    elif tech_timing >= 20:
+        entry_tag = "Hold"
+    else:
+        entry_tag = "Wait"
+
+    category = dgi_metrics.categorize_stock(metrics)
+    passes_filters = dgi_metrics.passes_minimum_filters(metrics)
+
+    return {
+        "symbol": symbol,
+        "name": info.get("shortName") or info.get("longName") or symbol,
+        "metrics": metrics,
+        "technicals": technicals,
+        "quality_score": quality_score,
+        "quality_detail": quality_detail,
+        "entry_tag": entry_tag,
+        "category": category,
+        "has_dividends": has_dividends,
+        "passes_minimum_filters": passes_filters,
+    }
+
+
 async def run_dgi_screener(config, cosmos) -> dict:
     """Run the full DGI screening pipeline.
 
