@@ -31,6 +31,7 @@
                 <th class="sortable" data-col="years_of_growth" data-type="num">Years <span class="sort-indicator">⇅</span></th>
                 <th class="sortable" data-col="days_on_list" data-type="num">Days on List <span class="sort-indicator">⇅</span></th>
                 <th class="sortable" data-col="technical_timing_score" data-type="num">Timing <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="entry_tag" data-type="str">Entry <span class="sort-indicator">⇅</span></th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -41,6 +42,8 @@
             {% set cat_lower = entry.category | default('balanced') | lower | replace(' ', '-') %}
             {% set score = entry.quality_score | default(0) %}
             {% set score_class = 'score-high' if score >= 70 else ('score-medium' if score >= 40 else 'score-low') %}
+            {% set tag = entry.entry_tag | default('—') %}
+            {% set tag_lower = tag | lower | replace(' ', '-') %}
             <tr>
                 <td class="mono">{{ entry.rank | default(loop.index) }}</td>
                 <td><strong>{{ entry.symbol }}</strong></td>
@@ -56,6 +59,7 @@
                 <td class="mono">{{ metrics.years_consecutive_increases | default('—') }}</td>
                 <td class="mono">{{ entry.days_on_list | default(0) }}</td>
                 <td class="mono">{{ "%.1f" | format(technicals.score | default(0)) }}</td>
+                <td><span class="badge badge-entry-{{ tag_lower }}">{{ tag }}</span></td>
                 <td class="actions-cell">
                     <button class="btn-trigger-row btn-dgi-analyze" data-symbol="{{ entry.symbol }}" title="Run CSP analysis for {{ entry.symbol }}">▶</button>
                     <button class="btn-trigger-row btn-dgi-add" data-symbol="{{ entry.symbol }}" data-exchange="NYSE" title="Add {{ entry.symbol }} to watchlist with CSP enabled">➕</button>

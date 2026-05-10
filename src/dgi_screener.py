@@ -72,9 +72,9 @@ async def run_dgi_screener(config, cosmos) -> dict:
         logger.error("DGI Screener: no data returned from yfinance — aborting")
         return {"error": "No data from yfinance", "total_screened": total_screened}
 
-    # 3-4. Calculate metrics and apply filters
+    # 3. Calculate metrics and score ALL stocks (no hard filter rejection)
     candidates = []
-    filtered_out = 0
+    skipped_no_dividend = 0
     errors = 0
     for idx, (symbol, item) in enumerate(batch_data.items()):
         if not symbol:
@@ -90,6 +90,11 @@ async def run_dgi_screener(config, cosmos) -> dict:
                         len(info) if info else 0,
                         f"{len(dividends)} entries" if dividends is not None and hasattr(dividends, '__len__') else str(type(dividends)),
                         f"{len(history)} rows" if history is not None and hasattr(history, '__len__') else str(type(history)))
+
+            # Must have dividend history to be a DGI candidate
+            if dividends is None or (hasattr(dividends, 'empty') and dividends.empty):
+                skipped_no_dividend += 1
+                continue
 
             years = dgi_metrics.calculate_years_consecutive_increases(dividends)
             cagr = dgi_metrics.calculate_dividend_cagr(dividends)
@@ -119,48 +124,54 @@ async def run_dgi_screener(config, cosmos) -> dict:
                         metrics["debt_to_equity"],
                         f"{metrics['market_cap']/1e9:.1f}B" if metrics["market_cap"] else "0")
 
-            if not dgi_metrics.passes_minimum_filters(metrics, filters):
-                logger.info("[DGI %s] FILTERED OUT — failed minimum filters", symbol)
-                filtered_out += 1
-                continue
-
-            # Technical timing
+            # Technical timing (use neutral score if no history)
             if history is None or (hasattr(history, 'empty') and history.empty):
-                logger.warning("[DGI %s] No price history — skipping technical score", symbol)
-                continue
-
-            tech_kwargs = {}
-            if "rsi_period" in tech_config:
-                tech_kwargs["rsi_period"] = tech_config["rsi_period"]
-            if "bb_period" in tech_config:
-                tech_kwargs["bb_period"] = tech_config["bb_period"]
-            if "bb_std" in tech_config:
-                tech_kwargs["bb_std"] = tech_config["bb_std"]
-            tech_score = dgi_metrics.calculate_technical_timing_score(
-                history["Close"].values,
-                history["High"].values,
-                history["Low"].values,
-                metrics.get("current_price", 0),
-                **tech_kwargs,
-            )
-
-            technicals = tech_score if isinstance(tech_score, dict) else {
-                "technical_timing_score": tech_score
-            }
+                technicals = {"score": 0}
+            else:
+                tech_kwargs = {}
+                if "rsi_period" in tech_config:
+                    tech_kwargs["rsi_period"] = tech_config["rsi_period"]
+                if "bb_period" in tech_config:
+                    tech_kwargs["bb_period"] = tech_config["bb_period"]
+                if "bb_std" in tech_config:
+                    tech_kwargs["bb_std"] = tech_config["bb_std"]
+                tech_score = dgi_metrics.calculate_technical_timing_score(
+                    history["Close"].values,
+                    history["High"].values,
+                    history["Low"].values,
+                    metrics.get("current_price", 0),
+                    **tech_kwargs,
+                )
+                technicals = tech_score if isinstance(tech_score, dict) else {
+                    "score": tech_score
+                }
 
             quality = dgi_metrics.calculate_quality_score(
                 metrics, technicals
             )
 
-            logger.info("[DGI %s] PASSED — quality_score=%.2f, tech_timing=%s, category pending",
-                        symbol, quality,
-                        technicals.get("score", technicals.get("technical_timing_score", "?")))
+            # Entry timing tag based on technical score
+            tech_timing = technicals.get("score", 0)
+            if tech_timing >= 70:
+                entry_tag = "Strong Buy"
+            elif tech_timing >= 50:
+                entry_tag = "Buy"
+            elif tech_timing >= 35:
+                entry_tag = "Accumulate"
+            elif tech_timing >= 20:
+                entry_tag = "Hold"
+            else:
+                entry_tag = "Wait"
+
+            logger.info("[DGI %s] quality_score=%.2f, tech_timing=%.1f, entry_tag=%s",
+                        symbol, quality, tech_timing, entry_tag)
 
             candidates.append({
                 "symbol": symbol,
                 "metrics": metrics,
                 "technicals": technicals,
                 "quality_score": round(quality, 2),
+                "entry_tag": entry_tag,
             })
 
         except Exception as e:
@@ -168,13 +179,13 @@ async def run_dgi_screener(config, cosmos) -> dict:
             errors += 1
             continue
 
-    passed_filters = len(candidates)
-    logger.info("DGI Screener: %d passed, %d filtered out, %d errors, out of %d fetched",
-                passed_filters, filtered_out, errors, len(batch_data))
+    logger.info("DGI Screener: %d scored, %d skipped (no dividends), %d errors, out of %d fetched",
+                len(candidates), skipped_no_dividend, errors, len(batch_data))
 
-    # 5-6. Sort by score and take top N
+    # 4. Sort by score and take exactly top 20
     candidates.sort(key=lambda x: x["quality_score"], reverse=True)
     top_entries = candidates[:top_n]
+    logger.info("DGI Screener: keeping top %d out of %d candidates", len(top_entries), len(candidates))
 
     # 7. Categorize each
     for i, entry in enumerate(top_entries):
@@ -224,6 +235,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
             "doc_type": "dgi_top20",
             "rank": entry["rank"],
             "quality_score": entry["quality_score"],
+            "entry_tag": entry.get("entry_tag", ""),
             "category": entry["category"],
             "days_on_list": entry["days_on_list"],
             "first_appeared": entry["first_appeared"],
