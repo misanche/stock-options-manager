@@ -44,7 +44,7 @@
             {% set score_class = 'score-high' if score >= 70 else ('score-medium' if score >= 40 else 'score-low') %}
             {% set tag = entry.entry_tag | default('—') %}
             {% set tag_lower = tag | lower | replace(' ', '-') %}
-            <tr>
+            <tr class="dgi-row" data-entry='{{ entry | tojson | e }}'>
                 <td class="mono">{{ entry.rank | default(loop.index) }}</td>
                 <td><strong>{{ entry.symbol }}</strong></td>
                 <td><span class="badge badge-cat-{{ cat_lower }}">{{ entry.category | default('—') }}</span></td>
@@ -54,7 +54,7 @@
                         {{ "%.1f" | format(score) }}
                     </span>
                 </td>
-                <td class="mono">{{ "%.2f" | format((metrics.dividend_yield | default(0)) * 100) }}%</td>
+                <td class="mono">{{ "%.2f" | format(metrics.dividend_yield | default(0)) }}%</td>
                 <td class="mono">{{ "%.1f" | format((metrics.dividend_cagr_5y | default(0)) * 100) }}%</td>
                 <td class="mono">{{ metrics.years_consecutive_increases | default('—') }}</td>
                 <td class="mono">{{ entry.days_on_list | default(0) }}</td>
@@ -69,6 +69,18 @@
         </tbody>
     </table>
 </div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="dgiDetailModal" style="display:none;">
+    <div class="modal-content" style="max-width:700px;">
+        <div class="modal-header">
+            <h3 id="dgiDetailTitle">Stock Detail</h3>
+            <button class="modal-close" id="dgiDetailClose">&times;</button>
+        </div>
+        <div id="dgiDetailBody"></div>
+    </div>
+</div>
+
 {% else %}
 <div class="card" style="padding:2rem; text-align:center; color:var(--text-muted);">
     <p>No DGI screening results yet. Run the screener to populate this table.</p>
@@ -188,6 +200,75 @@
             });
         });
     });
+
+    /* ── Detail Modal ── */
+    var modal = document.getElementById('dgiDetailModal');
+    var modalTitle = document.getElementById('dgiDetailTitle');
+    var modalBody = document.getElementById('dgiDetailBody');
+    var modalClose = document.getElementById('dgiDetailClose');
+
+    function fmtVal(v) {
+        if (v === null || v === undefined) return '—';
+        if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+        return String(v);
+    }
+
+    function buildSection(title, obj) {
+        if (!obj || typeof obj !== 'object') return '';
+        var html = '<div style="margin-bottom:1.25rem;">';
+        html += '<h4 style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">' + title + '</h4>';
+        html += '<div style="background:var(--bg-input);border-radius:var(--radius);padding:0.75rem 1rem;">';
+        html += '<div class="modal-grid">';
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var v = obj[k];
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+                html += '</div></div>';
+                html += buildSection(title + ' › ' + k.replace(/_/g, ' '), v);
+                html += '<div style="background:var(--bg-input);border-radius:var(--radius);padding:0 1rem;"><div class="modal-grid">';
+                continue;
+            }
+            var label = k.replace(/_/g, ' ');
+            html += '<div class="modal-field" style="margin-bottom:0.4rem;">';
+            html += '<label>' + label + '</label>';
+            html += '<div style="font-family:var(--font-mono);font-size:0.9rem;">' + fmtVal(v) + '</div>';
+            html += '</div>';
+        }
+        html += '</div></div></div>';
+        return html;
+    }
+
+    function openDetail(entry) {
+        modalTitle.textContent = entry.symbol + ' — Detail';
+        var html = '';
+        // Top-level info
+        var topFields = { rank: entry.rank, quality_score: entry.quality_score, category: entry.category, entry_tag: entry.entry_tag, days_on_list: entry.days_on_list, first_appeared: entry.first_appeared };
+        html += buildSection('Overview', topFields);
+        if (entry.metrics) html += buildSection('Fundamentals', entry.metrics);
+        if (entry.technicals) html += buildSection('Technical Timing', entry.technicals);
+        modalBody.innerHTML = html;
+        modal.style.display = 'flex';
+    }
+
+    function closeDetail() { modal.style.display = 'none'; }
+
+    if (modal) {
+        modalClose.addEventListener('click', closeDetail);
+        modal.addEventListener('click', function(e) { if (e.target === modal) closeDetail(); });
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeDetail(); });
+
+        document.querySelectorAll('.dgi-row').forEach(function(row) {
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', function(e) {
+                if (e.target.closest('.actions-cell')) return;
+                try {
+                    var entry = JSON.parse(row.getAttribute('data-entry'));
+                    openDetail(entry);
+                } catch(err) { console.error('Failed to parse entry data', err); }
+            });
+        });
+    }
 
     /* ── Sortable table ── */
     var table = document.getElementById('dgiTable');

@@ -198,6 +198,11 @@ def calculate_years_consecutive_increases(dividends_series: pd.Series) -> int:
     annual = dividends_series.groupby(dividends_series.index.year).sum()
     annual = annual.sort_index()
 
+    # Drop the current (partial) year — incomplete payments would break the streak
+    current_year = pd.Timestamp.now().year
+    if current_year in annual.index:
+        annual = annual.drop(current_year)
+
     if len(annual) < 2:
         return 0
 
@@ -225,6 +230,11 @@ def calculate_dividend_cagr(
 
     annual = dividends_series.groupby(dividends_series.index.year).sum()
     annual = annual.sort_index()
+
+    # Drop the current (partial) year to avoid skewed CAGR
+    current_year = pd.Timestamp.now().year
+    if current_year in annual.index:
+        annual = annual.drop(current_year)
 
     if len(annual) < years + 1:
         # Not enough history — use what we have
