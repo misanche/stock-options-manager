@@ -9,6 +9,53 @@
 
 ## Learnings
 
+### 2026-05-10: DGI Screener Scope Simplification — CSP Recommender Removed
+
+**User Directive (David):** Simplificar el alcance eliminando el agente LLM dedicado al CSP Recommender. El usuario prefiere control manual sobre recomendaciones automáticas.
+
+**Architecture Decision (v2.1):**
+- ❌ **Eliminado:** CSP Recommender (agente LLM diario, cron job, doc_type `csp_recommendation`)
+- ❌ **Eliminado:** Módulos `src/dgi_csp_recommender.py` y `src/dgi_csp_recommender_instructions.py`
+- ✅ **Añadido:** Botón "Quick Analysis" en dashboard → reutiliza `/api/chat` con `mode: "quick-analysis"` (endpoint existente)
+- ✅ **Añadido:** Botón "Add to Watchlist + CSP Watch" en dashboard → integra con sistema CSP existente
+- ✅ **Beneficio:** Una sola fase de implementación (Screener + Web Dashboard con botones manuales)
+- ✅ **Beneficio:** Costo LLM reducido (solo por análisis manual, no automático diario)
+
+**Implementación:**
+- Botón "Quick Analysis" dispara análisis LLM del símbolo en modal (reutiliza feature existente, sin agent nuevo)
+- Botón "Add to Watchlist" integra el símbolo con el monitoring CSP existente (agente CSP existente lo monitorea automáticamente)
+- No se requieren cambios a agentes existentes
+
+**Key Files Updated:**
+- Propuesta: `.squad/decisions/inbox/danny-dgi-screener.md` (v2.1 — secciones 1, 6, 7, 8, 9, 10, 11, 12, 13, 14 reescritas)
+- Decisión formal: `.squad/decisions/inbox/danny-scope-simplification.md` (nueva)
+
+**Fases Finales:**
+- Fase 1 (3-4 días): DGI Screener MVP (diario, yfinance, Top 20, CosmosDB)
+- Fase 2 (2-3 días): Web Dashboard + dos botones manuales
+- Fase 3 (1-2 días): Refinamiento y robustez
+
+### 2026-05-10: Technical Timing Indicators Added to DGI Screener Proposal
+
+**User Directive (dsanchor/David):** El Top 20 DGI debe reflejar acciones con buenos puntos de entrada técnicos, no solo buenos fundamentales. "Las buenas DGI ya las conozco — quiero saber cuáles tienen buen entry point."
+
+**Architecture Decision:**
+- Quality score rebalanceado: 70% fundamental + 30% technical timing
+- 4 indicadores técnicos programáticos: RSI(14), SMA(50/200) position, distancia 52w high, Bollinger Bands(20,2)
+- Fuente datos: `yfinance` `ticker.history(period="1y")` → OHLCV diario
+- TradingView como backup para datos técnicos
+- Indicadores técnicos también se inyectan como contexto al CSP Recommender LLM (sección `== TECHNICAL INDICATORS ==`)
+- Todos los parámetros configurables en `config.yaml` bajo `dgi_screener.technical_indicators` y `dgi_screener.score_weights`
+
+**Key Files:**
+- Propuesta: `.squad/decisions/inbox/danny-dgi-screener.md` (secciones 2, 4.2, 6.4, 6.5, 8.2, 11, 14 actualizadas)
+- Decisión: `.squad/decisions/inbox/danny-technical-timing.md`
+
+**User Preferences:**
+- David quiere que el screener sea "opinionated" sobre timing — no una lista genérica
+- Indicadores técnicos siempre programáticos (sin LLM) — el LLM solo en CSP Recommender
+- yfinance es la fuente primaria para todo (fundamentals + technicals)
+
 ### CosmosDB Settings Container Documentation (2026-03-30)
 - Updated `README.md` with comprehensive "Settings Container" section covering:
   - Feature overview with deep-merge behavior and use cases
@@ -326,3 +373,47 @@ tradingview:
 **Decision doc:** `.squad/decisions/inbox/danny-contrarian-agent-architecture.md`
 **Status:** Proposed — awaiting user (dsanchor) approval
 
+- **Rusty:** Fetcher wrapper, screener agent, CSP recommender agent implementation
+- **Linus:** Agent instructions (if LLM-driven), custom metrics formulas
+- **Basher:** Cache implementation, monitoring, testing
+
+**Decision doc:** `.squad/decisions/inbox/danny-dgi-screener.md`
+**Status:** Proposed — comprehensive architecture with free data sources, awaiting user approval for Phase 1 implementation
+
+**Alternatives Rejected:**
+- Alpha Vantage Free Tier (500 req/day insufficient)
+- Direct scraping of Dividend.com/Seeking Alpha (TOS violations, high block risk)
+- IEX Cloud Free (dividend data requires paid tier)
+- Massive.com MCP integration (complexity not justified, unknown endpoint availability for DGI metrics)
+
+**Key Insight:** yfinance provides 90% of needed DGI metrics for free, with existing TradingView scraping covering the remaining 10% (options chain for CSP evaluation). The architecture leverages proven patterns from existing agents while adding minimal new complexity.
+
+### 2026-05-10: DGI Screener Proposal v2 (Feedback Incorporated)
+
+**Context:** User (dsanchor) reviewed v1 proposal and provided detailed feedback. Regenerated architecture proposal in Spanish, overwriting the previous version.
+
+**Key Architecture Changes from v1 → v2:**
+
+1. **Top 20 (not 50):** User wants a compact, high-signal list — exactly 20 entries always
+2. **Categorización automática programática:** Stocks categorized as Compounder/High Yield/Aristocrat/Balanced/Rising Star based on metrics thresholds (yield, CAGR, payout, years). Priority order defined.
+3. **Tracking de permanencia diario:** Each stock tracks `days_on_list` counter — increments daily if repeating, resets to 0 for new entries. Weekly snapshots stored for history.
+4. **CSP Recommender usa LLM (gpt-5.1):** NOT programmatic — the LLM agent evaluates options chain and generates recommendations with reasoning, following the same AgentRunner pattern as existing CSP agent.
+5. **DGI Screener es 100% programático:** No LLM involvement — yfinance data + custom calculations only.
+6. **Sin Telegram:** No notifications for this feature — store only in CosmosDB.
+7. **Dashboard separado:** New "DGI Screener" menu section, completely independent from main dashboard. "Añadir a seguimiento" button integrates with existing CSP watcher.
+8. **Solo S&P 500:** No mid-caps expansion yet.
+
+**CosmosDB Design:**
+- New container `dgi_screener` (partition key: `/symbol`)
+- Three doc_types: `dgi_top20` (active list), `csp_recommendation` (LLM output), `daily_snapshot` (historical)
+- Separate from `symbols` container to avoid cross-partition contamination
+
+**User Preferences (dsanchor):**
+- Prefers Spanish for proposal documents
+- Wants specific threshold values for categorization (not vague)
+- Wants LLM-driven CSP analysis (not just calculations)
+- No Telegram for screener features
+- Compact list (20) over broad list (50)
+
+**Decision doc:** `.squad/decisions/inbox/danny-dgi-screener.md` (v2, overwrites v1)
+**Status:** Proposed — awaiting user approval to begin Phase 1 implementation

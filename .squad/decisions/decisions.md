@@ -1891,3 +1891,122 @@ Remove all legacy single-agent fallback paths:
 ## Impact
 - No runtime behavior change — the 2-phase path was already the only path executed.
 - Any future instruction file changes must keep the assessment/roll module pattern.
+
+---
+
+# DGI Screener Feature Decisions
+
+## User Directive: Scope Simplification
+
+**Date:** 2026-05-10T14:49  
+**From:** David Sancho (via Copilot)  
+**Decision:** Remove the CSP Recommender agent entirely from the DGI Screener feature. Instead, add a manual "Quick Analysis" button that triggers the existing quick analysis feature, and an "Add to Watchlist + CSP Watch" button. No new LLM agent needed — reuse existing infrastructure.  
+**Rationale:** User preference for control; existing quick analysis is sufficient; eliminate need for a separate daily LLM agent.
+
+---
+
+## Decision: Scope Simplification — CSP Recommender Removed
+
+**Date:** 2026-05-10  
+**Author:** Danny (Lead)  
+**Status:** Approved by David (User)  
+**Impact:** Reduces complexity, accelerates delivery, improves user control
+
+### Context
+Initial DGI Screener v2 proposal (2026-05-10) included a daily LLM agent (CSP Recommender) to generate automatic Cash-Secured Put recommendations for each Top 20 symbol. User feedback reversed this decision.
+
+### Changes
+**Eliminated:**
+- LLM agent: `dgi_csp_recommender.py`
+- Agent instructions: `dgi_csp_recommender_instructions.py`
+- Cron job: daily recommendation generation
+- CosmosDB doc_type: `csp_recommendation`
+- YAML config block: `dgi_csp_recommender`
+
+**Added: Two manual buttons in DGI Screener dashboard**
+1. "Quick Analysis" → `POST /api/chat` (mode: "quick-analysis") — reuses existing feature
+2. "Add to Watchlist + CSP Watch" → `POST /api/dgi/add-to-watchlist` — integrates with existing CSP agent
+
+### Benefits
+- LLM cost reduced 80–90% (manual triggers vs. daily automation)
+- Complexity: 1 agent + reused endpoints vs. 2 new agents
+- Delivery: 50% faster (1–2 days vs. 3–4 days)
+- Code reuse: maximized (no new agent code, reuses `/api/chat` + existing CSP infrastructure)
+- User control: manual analysis before decisions
+
+### Implementation Phases
+1. **Phase 1 (3–4 days):** DGI Screener MVP (yfinance_fetcher, dgi_metrics, dgi_screener, CosmosDB, scheduler)
+2. **Phase 2 (2–3 days):** Web dashboard (/dgi-screener, API endpoints, manual buttons)
+3. **Phase 3 (1–2 days):** Error handling, logging, edge cases
+
+---
+
+## Decision: Technical Indicators for DGI Screener Entry Timing
+
+**Date:** 2026-05-10  
+**Author:** Danny (Lead)  
+**Status:** Incorporated in DGI Screener proposal v2  
+**Impact:** dgi_metrics.py, yfinance_fetcher.py, config.yaml quality_score calculation
+
+### Context
+User feedback: "Don't give me 20 good DGI stocks — I know which those are. Give me 20 with good entry points now."  
+Screener evolves from purely fundamental-quality to hybrid: **70% fundamental quality + 30% technical entry timing**.
+
+### Quality Score Rebalancing
+- **Fundamental (70%):** Yield (15%), Growth (18%), Payout (10%), Valuation (10%), Health (7%), Consistency (10%)
+- **Technical Timing (30%):** RSI (30%), SMA position (25%), 52-week high distance (25%), Bollinger Bands (20%)
+
+### Technical Indicators (Programmatic, no LLM cost)
+| Indicator | Implementation | Favorable Signal |
+|-----------|---------------|------------------|
+| RSI(14) | `calculate_rsi()` in dgi_metrics.py | < 40 (oversold) |
+| SMA(50/200) | `calculate_sma()` | Price at or below SMA(200) |
+| 52w High Distance | Direct calculation | > 15% pullback |
+| Bollinger Bands(20,2) | `calculate_bollinger_bands()` | Lower quartile of bands |
+
+### Data Source
+- **Primary:** yfinance — `ticker.history(period="1y")` provides OHLCV daily data
+- **Backup:** Existing TradingView integration
+- `yfinance_fetcher.py` returns history + info + dividends
+
+### Configuration
+All parameters configurable in config.yaml:
+- RSI/SMA/BB periods
+- Quality score weights (fundamental vs. technical)
+- Component sub-weights
+
+### Rationale
+- Best DGI stocks are stable and well-known; differentiation is timing entry
+- Technical indicators are deterministic; no LLM cost
+- 30% technical weight sufficient to influence ranking without sacrificing fundamental quality
+- yfinance provides free, adequate OHLCV for these calculations
+
+---
+
+## Decision: Post-Agent Premium Validation
+
+**Date:** 2026-07-13  
+**Author:** Rusty (Agent Dev)  
+**Status:** Implemented  
+**Impact:** agent_runner.py, options chain data integrity
+
+### Context
+LLM agents occasionally hallucinate premiums when reading options chain JSON — mismatching bid values from wrong expiration dates. Example: CSP agent reported $1.55 for strike $45 exp 2026-06-18, but $1.55 bid belonged to 2026-12-18; actual bid was $0.15. Instructions alone cannot prevent this error.
+
+### Solution
+Added programmatic post-agent validation step (`_validate_premium_against_chain`) in `AgentRunner` that cross-checks every reported premium against actual parsed options chain data **after** agent JSON output but **before** persistence.
+
+### Validation Scope
+- **Watchlist (SELL signals):** premium (bid) at reported strike + expiration
+- **Monitor (ROLL signals):** new_premium (bid of new contract) and buyback_cost (ask of current contract)
+- **Delta:** corrected if chain shows different value
+
+### Behavior
+- Mismatches > $0.02: auto-corrected with WARNING log
+- `premium_corrected: True` flag set for traceability
+- premium_pct and net_credit recalculated on correction
+- Defensive: wrapped in try/except, never crashes pipeline
+- Logs: DEBUG on validation pass, WARNING on correction
+
+### Files Changed
+- `src/agent_runner.py` — methods: `_validate_premium_against_chain()`, `_validate_single_premium()`, `_validate_buyback_cost()` plus integration into `run_symbol_agent()` and `run_position_monitor()`

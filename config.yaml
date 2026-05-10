@@ -43,3 +43,29 @@ tradingview:
   max_403_retries: 3         # Max retry attempts on 403 with session refresh + backoff
   retry_delays: [5, 15, 45]  # Backoff delays in seconds between 403 retries
   randomize_symbols: true    # Shuffle symbol order to vary access patterns
+
+dgi_screener:
+  enabled: true
+  cron: "0 6 * * 1-5"  # 6 AM weekdays (America/New_York)
+  seed_symbols_file: "data/sp500_symbols.txt"
+  top_n: 20
+  filters:
+    min_yield: 0.015
+    max_payout: 0.75
+    max_pe: 30
+    max_de: 2.0
+    min_years: 3
+    min_market_cap: 10000000000
+    min_growth: 0.0
+  score_weights:
+    dividend_yield: 0.15
+    dividend_growth: 0.18
+    payout_safety: 0.10
+    valuation: 0.10
+    financial_health: 0.07
+    consistency: 0.10
+    technical_timing: 0.30
+  technical_indicators:
+    rsi_period: 14
+    bb_period: 20
+    bb_std: 2.0

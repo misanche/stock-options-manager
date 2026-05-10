@@ -15,6 +15,7 @@ from .covered_call_agent import run_covered_call_analysis
 from .cash_secured_put_agent import run_cash_secured_put_analysis
 from .open_call_monitor_agent import run_open_call_monitor
 from .open_put_monitor_agent import run_open_put_monitor
+from .dgi_screener import run_dgi_screener
 
 
 class OptionsAgentScheduler:
@@ -29,6 +30,7 @@ class OptionsAgentScheduler:
         self._cron_changed = False
         self._summary_cron_changed = False
         self._options_chain_cron_changed = False
+        self._dgi_screener_cron_changed = False
         self._last_config_reload = None
         self._config_reload_interval = 60  # seconds
     
@@ -52,6 +54,13 @@ class OptionsAgentScheduler:
         options_chain_config['cron'] = new_cron
         self.config.config['options_chain_scheduler'] = options_chain_config
         self._options_chain_cron_changed = True
+    
+    def reschedule_dgi_screener(self, new_cron: str):
+        """Update DGI screener cron expression. The run loop will pick it up on next iteration."""
+        dgi_config = self.config.config.get('dgi_screener', {})
+        dgi_config['cron'] = new_cron
+        self.config.config['dgi_screener'] = dgi_config
+        self._dgi_screener_cron_changed = True
     
     def setup(self):
         """Initialize configuration, CosmosDB, and agent runner."""
@@ -117,6 +126,19 @@ class OptionsAgentScheduler:
         print(f"  Enabled: {options_chain_enabled}")
         if options_chain_enabled:
             print(f"  Cron: {options_chain_cron}")
+            print(f"  Timezone: {self.config.timezone}")
+        else:
+            print(f"  Status: Disabled in config")
+        
+        # Log DGI screener configuration
+        dgi_config = self.config.config.get('dgi_screener', {})
+        dgi_enabled = dgi_config.get('enabled', True)
+        dgi_cron = dgi_config.get('cron', '0 6 * * 1-5')
+        
+        print(f"\nDGI Screener Configuration:")
+        print(f"  Enabled: {dgi_enabled}")
+        if dgi_enabled:
+            print(f"  Cron: {dgi_cron}")
             print(f"  Timezone: {self.config.timezone}")
         else:
             print(f"  Status: Disabled in config")
@@ -236,6 +258,31 @@ class OptionsAgentScheduler:
         print(f"Options Chain Fetch Complete: {success_count} success, {error_count} errors")
         print(f"{'~'*70}\n")
     
+    def run_dgi_screener_job(self):
+        """Execute DGI screener (bridges async to sync for scheduler)."""
+        asyncio.run(self._run_dgi_screener_async())
+    
+    async def _run_dgi_screener_async(self):
+        """Run DGI screener if enabled in config."""
+        dgi_config = self.config.config.get('dgi_screener', {})
+        if not dgi_config.get('enabled', True):
+            print("⏭️  DGI Screener disabled in config")
+            return
+        
+        tz = pytz.timezone(self.config.timezone)
+        now_tz = datetime.now(tz)
+        print(f"\n{'+'*70}")
+        print(f"🔍 DGI Screener - Scheduled run at {now_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"{'+'*70}\n")
+        
+        try:
+            result = await run_dgi_screener(self.config, self.cosmos)
+            print(f"DGI Screener complete: {result.get('total_screened', 0)} screened, "
+                  f"{result.get('passed_filters', 0)} passed, "
+                  f"{result.get('top_n', 0)} in top list")
+        except Exception as e:
+            print(f"ERROR during DGI screener: {e}")
+    
     def signal_handler(self, sig, frame):
         """Handle graceful shutdown on Ctrl+C."""
         print("\n\nShutdown signal received. Stopping scheduler...")
@@ -313,6 +360,25 @@ class OptionsAgentScheduler:
                     if key in options_chain_settings:
                         self.config.config['options_chain_scheduler'][key] = options_chain_settings[key]
             
+            # Check DGI screener settings
+            dgi_settings = cosmos_settings.get('dgi_screener', {})
+            new_dgi_cron = dgi_settings.get('cron')
+            current_dgi_cron = self.config.config.get('dgi_screener', {}).get('cron', '0 6 * * 1-5')
+            
+            dgi_cron_changed = False
+            if new_dgi_cron and new_dgi_cron != current_dgi_cron:
+                if 'dgi_screener' not in self.config.config:
+                    self.config.config['dgi_screener'] = {}
+                self.config.config['dgi_screener']['cron'] = new_dgi_cron
+                dgi_cron_changed = True
+            
+            if dgi_settings:
+                if 'dgi_screener' not in self.config.config:
+                    self.config.config['dgi_screener'] = {}
+                for key in ['enabled']:
+                    if key in dgi_settings:
+                        self.config.config['dgi_screener'][key] = dgi_settings[key]
+            
             # Set flags for the main loop to pick up
             if main_cron_changed:
                 self._cron_changed = True
@@ -328,6 +394,10 @@ class OptionsAgentScheduler:
             if options_chain_cron_changed:
                 self._options_chain_cron_changed = True
                 print(f"✓ Config reloaded from CosmosDB: options chain cron changed to {new_options_chain_cron}")
+            
+            if dgi_cron_changed:
+                self._dgi_screener_cron_changed = True
+                print(f"✓ Config reloaded from CosmosDB: DGI screener cron changed to {new_dgi_cron}")
                 
         except Exception as e:
             # Don't crash the scheduler on config reload errors
@@ -367,6 +437,13 @@ class OptionsAgentScheduler:
         options_chain_next_run = None
         options_chain_cron = None
         
+        # Initialize DGI screener cron (if enabled)
+        dgi_config = self.config.config.get('dgi_screener', {})
+        dgi_enabled = dgi_config.get('enabled', True)
+        dgi_cron_expr = dgi_config.get('cron', '0 6 * * 1-5')
+        dgi_next_run = None
+        dgi_cron = None
+        
         if summary_enabled:
             try:
                 summary_cron = croniter(summary_cron_expr, now_tz)
@@ -385,6 +462,15 @@ class OptionsAgentScheduler:
                 print(f"⚠️  Options chain scheduling disabled")
                 options_chain_enabled = False
         
+        if dgi_enabled:
+            try:
+                dgi_cron = croniter(dgi_cron_expr, now_tz)
+                dgi_next_run = dgi_cron.get_next(datetime)
+            except (ValueError, KeyError) as e:
+                print(f"⚠️  Invalid DGI screener cron expression '{dgi_cron_expr}': {e}")
+                print(f"⚠️  DGI screener scheduling disabled")
+                dgi_enabled = False
+        
         # Display initial schedule
         print(f"\nMonitor Agents        - Next run: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         if summary_enabled and summary_next_run:
@@ -395,6 +481,10 @@ class OptionsAgentScheduler:
             print(f"Options Chain Fetcher - Next run: {options_chain_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         else:
             print(f"Options Chain Fetcher - Disabled")
+        if dgi_enabled and dgi_next_run:
+            print(f"DGI Screener          - Next run: {dgi_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        else:
+            print(f"DGI Screener          - Disabled")
         
         # Track when we last reloaded config
         self._last_config_reload = time.time()
@@ -452,6 +542,23 @@ class OptionsAgentScheduler:
                 except (ValueError, KeyError) as e:
                     print(f"⚠️  Invalid options chain cron expression '{options_chain_cron_expr}': {e}")
                     options_chain_enabled = False
+            
+            # Check if DGI screener cron was updated from the web UI
+            if self._dgi_screener_cron_changed:
+                self._dgi_screener_cron_changed = False
+                dgi_config = self.config.config.get('dgi_screener', {})
+                dgi_cron_expr = dgi_config.get('cron', '0 6 * * 1-5')
+                try:
+                    tz = pytz.timezone(self.config.timezone)
+                    now_tz = datetime.now(tz)
+                    dgi_cron = croniter(dgi_cron_expr, now_tz)
+                    dgi_next_run = dgi_cron.get_next(datetime)
+                    dgi_enabled = dgi_config.get('enabled', True)
+                    print(f"DGI screener cron rescheduled to: {dgi_cron_expr}")
+                    print(f"Next scheduled run: {dgi_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}\n")
+                except (ValueError, KeyError) as e:
+                    print(f"⚠️  Invalid DGI screener cron expression '{dgi_cron_expr}': {e}")
+                    dgi_enabled = False
 
             now_tz = datetime.now(tz)
             
@@ -473,6 +580,12 @@ class OptionsAgentScheduler:
                 options_chain_next_run = options_chain_cron.get_next(datetime)
                 print(f"Options Chain Fetcher - Next run: {options_chain_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}\n")
                 print(f"Summary Agent  - Next run: {summary_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}\n")
+            
+            # Check DGI screener scheduler
+            if dgi_enabled and dgi_next_run and now_tz >= dgi_next_run:
+                self.run_dgi_screener_job()
+                dgi_next_run = dgi_cron.get_next(datetime)
+                print(f"DGI Screener          - Next run: {dgi_next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}\n")
             
             time.sleep(1)
         

@@ -655,3 +655,15 @@ Added `delete_activity(activity_id, symbol)` to CosmosDB client — simple singl
 
 ### Premium Validation Against Chain Data
 LLM agents can hallucinate premiums — picking bid values from wrong expiration dates in the options chain JSON. Added `_validate_premium_against_chain()` as a post-agent code-level safety net in `AgentRunner`. For watchlist SELL signals, it cross-checks the reported premium (bid) against the parsed chain at the exact strike+expiration. For monitor ROLL signals, it validates both the new_premium (bid of new contract) and buyback_cost (ask of current contract) inside roll_economics. Mismatches > $0.02 are auto-corrected with a WARNING log, and `premium_corrected: True` is set on the activity for traceability. Delta is also corrected if it mismatches. The method is called in both `run_symbol_agent()` (watchlist) and `run_position_monitor()` (monitor) pipelines. Defensive: wrapped in try/except, never crashes the pipeline.
+
+### DGI Screener Bug Fix Round (2026-07)
+Basher (code review) found 5 critical and 3 moderate bugs in the DGI Screener implementation. All fixed:
+- **C1:** `get_batch_data()` returns `Dict[str,Dict]` — iteration must use `.items()` not bare loop
+- **C2:** `calculate_technical_timing_score` expects 3 numpy arrays (close/high/low), not a DataFrame — extract `.values` from history columns
+- **C3:** `calculate_quality_score` takes 2 params (metrics, technical) — removed extra `weights` arg from call site
+- **C4:** Missing `yfinance`, `numpy`, `pandas` in requirements.txt
+- **C5:** DGI screener job was never wired into the scheduler run loop — added full cron init, reschedule, and trigger blocks
+- **M1:** Technical timing score dict key is `"score"`, not `"technical_timing_score"`
+- **M2:** Added `dgi_screener` config section to config.yaml
+- **M3:** `days_on_list` for new entries starts at 1, not 0
+- **Lesson:** Always verify function signatures match call sites across module boundaries, especially when different devs write caller vs callee
