@@ -1706,6 +1706,11 @@ async def settings_config_page(request: Request):
     options_chain_enabled = options_chain_cfg.get("enabled", True)
     options_chain_cron = options_chain_cfg.get("cron", "0 * * * *")
     
+    # DGI screener settings
+    dgi_cfg = config.get("dgi_screener", {})
+    dgi_enabled = dgi_cfg.get("enabled", True)
+    dgi_cron = dgi_cfg.get("cron", "0 6 * * 1-5")
+    
     # Resolve env vars for display
     if telegram_bot_token.startswith("${"):
         telegram_bot_token = _resolve_env(telegram_bot_token)
@@ -1776,6 +1781,30 @@ async def settings_config_page(request: Request):
         except Exception:
             options_chain_next_run = "Invalid cron"
     
+    # Calculate scheduler times for DGI Screener
+    dgi_last_run = ""
+    dgi_next_run = ""
+    
+    if cosmos:
+        try:
+            dgi_entries = cosmos.get_dgi_top20()
+            timestamps = [e.get("last_updated", "") for e in dgi_entries if e.get("last_updated")]
+            if timestamps:
+                latest = max(timestamps)
+                last_dt = datetime.fromisoformat(str(latest).replace("Z", "+00:00"))
+                dgi_last_run = _format_time_dual_tz(last_dt, timezone)
+        except Exception:
+            pass
+    
+    if dgi_cron:
+        try:
+            now_tz = datetime.now(tz)
+            cron = croniter(dgi_cron, now_tz)
+            next_run_dt = cron.get_next(datetime)
+            dgi_next_run = _format_time_dual_tz(next_run_dt, timezone)
+        except Exception:
+            dgi_next_run = "Invalid cron"
+    
     return templates.TemplateResponse("settings_config.html", {
         "request": request,
         "cron_expr": cron_expr,
@@ -1794,6 +1823,10 @@ async def settings_config_page(request: Request):
         "options_chain_cron": options_chain_cron,
         "options_chain_last_run": options_chain_last_run,
         "options_chain_next_run": options_chain_next_run,
+        "dgi_enabled": dgi_enabled,
+        "dgi_cron": dgi_cron,
+        "dgi_last_run": dgi_last_run,
+        "dgi_next_run": dgi_next_run,
     })
 
 
@@ -1928,6 +1961,33 @@ async def settings_config_save(request: Request):
         except (ValueError, KeyError):
             pass
 
+    # DGI screener settings
+    dgi_enabled = form.get("dgi_enabled") == "true"
+    dgi_cron = str(form.get("dgi_cron", "0 6 * * 1-5")).strip()
+    
+    if dgi_cron:
+        try:
+            croniter(dgi_cron)
+            if cosmos:
+                cosmos_settings = _load_settings_from_cosmos(cosmos) or {}
+                cosmos_settings.setdefault("dgi_screener", {})
+                cosmos_settings["dgi_screener"]["enabled"] = dgi_enabled
+                cosmos_settings["dgi_screener"]["cron"] = dgi_cron
+                _save_settings_to_cosmos(cosmos, cosmos_settings)
+            
+            config = _load_config()
+            config.setdefault("dgi_screener", {})
+            config["dgi_screener"]["enabled"] = dgi_enabled
+            config["dgi_screener"]["cron"] = dgi_cron
+            _write_config(config)
+            saved.append("DGI screener")
+            
+            scheduler = getattr(request.app.state, "scheduler", None)
+            if scheduler is not None:
+                scheduler.reschedule_dgi_screener(dgi_cron)
+        except (ValueError, KeyError):
+            pass
+
     # Re-read for display
     cosmos_settings = _load_settings_from_cosmos(cosmos)
     if cosmos_settings:
@@ -1957,6 +2017,11 @@ async def settings_config_save(request: Request):
     oc_enabled = options_chain_cfg.get("enabled", True)
     oc_cron = options_chain_cfg.get("cron", "0 * * * *")
 
+    # DGI screener settings
+    dgi_cfg = config.get("dgi_screener", {})
+    dgi_en = dgi_cfg.get("enabled", True)
+    dgi_cr = dgi_cfg.get("cron", "0 6 * * 1-5")
+
     return templates.TemplateResponse("settings_config.html", {
         "request": request,
         "cron_expr": cron_expr,
@@ -1970,6 +2035,8 @@ async def settings_config_save(request: Request):
         "summary_activity_count": sum_activity_count,
         "options_chain_enabled": oc_enabled,
         "options_chain_cron": oc_cron,
+        "dgi_enabled": dgi_en,
+        "dgi_cron": dgi_cr,
     })
 
 
@@ -2265,6 +2332,81 @@ async def trigger_all_status(request: Request):
     if status is None:
         return JSONResponse(_default_full_analysis_status())
     return JSONResponse(dict(status))
+
+
+# ===========================================================================
+# DGI Screener — Page & API
+# ===========================================================================
+
+@app.get("/dgi", response_class=HTMLResponse)
+async def dgi_page(request: Request):
+    """DGI Screener page — Top 20 dividend growth stocks."""
+    cosmos = getattr(request.app.state, "cosmos", None)
+    top20: list = []
+    last_run = ""
+    next_run = ""
+    error = None
+
+    if cosmos is None:
+        error = "CosmosDB not available"
+    else:
+        try:
+            top20 = cosmos.get_dgi_top20()
+            top20.sort(key=lambda x: x.get("rank", 999))
+        except Exception as e:
+            error = f"Failed to load DGI data: {e}"
+
+    # Determine last run from the most recent last_updated timestamp
+    if top20:
+        timestamps = [e.get("last_updated", "") for e in top20 if e.get("last_updated")]
+        if timestamps:
+            try:
+                latest = max(timestamps)
+                last_dt = datetime.fromisoformat(str(latest).replace("Z", "+00:00"))
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                config = _load_config()
+                tz_str = config.get("scheduler", {}).get("timezone", "America/New_York")
+                last_run = _format_time_dual_tz(last_dt, tz_str)
+            except Exception:
+                last_run = str(latest) if timestamps else ""
+
+    # Calculate next scheduled run
+    config = _load_config()
+    dgi_cfg = config.get("dgi_screener", {})
+    dgi_cron_expr = dgi_cfg.get("cron", "0 6 * * 1-5")
+    tz_str = config.get("scheduler", {}).get("timezone", "America/New_York")
+    if dgi_cfg.get("enabled", True) and dgi_cron_expr:
+        try:
+            tz = pytz.timezone(tz_str)
+            now_tz = datetime.now(tz)
+            cron = croniter(dgi_cron_expr, now_tz)
+            next_run_dt = cron.get_next(datetime)
+            next_run = _format_time_dual_tz(next_run_dt, tz_str)
+        except Exception:
+            next_run = "Invalid cron"
+
+    return templates.TemplateResponse("dgi_screener.html", {
+        "request": request,
+        "top20": top20,
+        "last_run": last_run,
+        "next_run": next_run,
+        "error": error,
+    })
+
+
+@app.get("/api/dgi/top20")
+async def api_dgi_top20(request: Request):
+    """Return the DGI top 20 as JSON."""
+    cosmos = getattr(request.app.state, "cosmos", None)
+    if cosmos is None:
+        return JSONResponse({"error": "CosmosDB not available"}, status_code=503)
+    try:
+        top20 = cosmos.get_dgi_top20()
+        top20.sort(key=lambda x: x.get("rank", 999))
+        return JSONResponse({"top20": top20})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------

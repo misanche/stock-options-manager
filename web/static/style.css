@@ -1067,3 +1067,27 @@ input:checked + .slider::before { transform: translateX(16px); background: #fff;
     thead th { font-size: 0.78rem; }
     tbody td { font-size: 0.85rem; }
 }
+
+/* ── DGI Screener ── */
+.badge-cat-aristocrat  { background: rgba(245,158,11,0.2);  color: #f59e0b; }
+.badge-cat-rising-star { background: rgba(6,182,212,0.2);   color: #06b6d4; }
+.badge-cat-compounder  { background: rgba(167,139,250,0.2); color: var(--accent-purple); }
+.badge-cat-high-yield  { background: rgba(0,168,126,0.2);   color: var(--accent-green); }
+.badge-cat-balanced    { background: rgba(141,150,158,0.2); color: var(--text-muted); }
+
+.score-bar {
+    display: inline-block; width: 48px; height: 6px;
+    background: var(--bg-input); border-radius: 3px; vertical-align: middle; margin-right: 0.4rem;
+    position: relative; overflow: hidden;
+}
+.score-bar-fill {
+    position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px;
+}
+.score-high   .score-bar-fill { background: var(--accent-green); }
+.score-medium .score-bar-fill { background: var(--accent-orange); }
+.score-low    .score-bar-fill { background: var(--accent-red); }
+
+.dgi-table th.sortable { cursor: pointer; user-select: none; }
+.dgi-table th.sortable:hover { color: var(--accent-blue); }
+.dgi-table th .sort-indicator { font-size: 0.65rem; margin-left: 0.25rem; opacity: 0.5; }
+.dgi-table th.sort-active .sort-indicator { opacity: 1; color: var(--accent-blue); }

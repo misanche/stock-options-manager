@@ -670,3 +670,20 @@ Basher (code review) found 5 critical and 3 moderate bugs in the DGI Screener im
 
 ### DGI Screener Dashboard Trigger (2026-07)
 Added "Run DGI Screener" button to web dashboard with backing API. Pattern follows the existing trigger-all/full-analysis system but with a separate background runner since `run_dgi_screener(config, cosmos)` has a different signature (no runner/context_provider/symbol). API: `POST /api/trigger/dgi_screener` + `GET /api/trigger/dgi_screener/status`. Uses `_dgi_screener_status` dict on app.state for concurrency guard (409 if already running). Frontend polls status every 3s until done, shows Running→Done✓ states. Green button style (`btn-trigger-green`) distinguishes from blue full-analysis.
+
+### DGI Screener Page & Settings (2026-07)
+**Status:** ✅ Completed
+**Scope:** Full DGI screener web page + settings integration
+
+**Changes:**
+- **web/templates/dgi_screener.html:** New page showing Top 20 dividend growth stocks with sortable table, category badges (Aristocrat/Rising Star/Compounder/High Yield/Balanced), quality score bars, trigger button with status polling
+- **web/templates/base.html:** Added "DGI Screener" nav link between Chat and Settings
+- **web/templates/settings_config.html:** Added DGI Screener scheduler section (enable toggle, cron input, last/next run) after Options Chain Scheduler
+- **web/static/style.css:** Added `.badge-cat-*` styles for 5 categories, `.score-bar` visual indicators, `.dgi-table` sortable column styles
+- **web/app.py:** Added `GET /dgi` page route, `GET /api/dgi/top20` JSON endpoint, DGI settings in GET/POST `/settings/config`
+
+**Patterns:**
+- Settings save follows CosmosDB-first + config.yaml fallback pattern (same as options_chain_scheduler)
+- Last run determined from `max(last_updated)` across dgi_top20 entries
+- Scheduler reschedule via `scheduler.reschedule_dgi_screener()`
+- `timezone` variable shadowing in settings functions — local string var shadows `datetime.timezone` import; avoid using `timezone.utc` in those functions

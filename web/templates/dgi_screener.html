@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}DGI Screener — Stock Options Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>DGI Screener</h1>
+    <p class="subtitle">Top 20 Dividend Growth Stocks — S&amp;P 500</p>
+</div>
+
+<!-- Summary Cards -->
+<div class="summary-row">
+    <div class="summary-card">
+        <div class="summary-value">{{ top20 | length }}</div>
+        <div class="summary-label">Top 20 Stocks</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-value" style="font-size:1rem;">{{ last_run or "Never" }}</div>
+        <div class="summary-label">Last Run</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-value" style="font-size:1rem;">{{ next_run or "N/A" }}</div>
+        <div class="summary-label">Next Scheduled Run</div>
+    </div>
+    <div class="summary-card summary-card-action">
+        <button class="btn-trigger" id="btnRunDgi" onclick="triggerDgi()">
+            🔄 Run DGI Screener
+        </button>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">⚠️ {{ error }}</div>
+{% endif %}
+
+{% if top20 %}
+<div class="card" style="overflow-x:auto;">
+    <table class="table dgi-table" id="dgiTable">
+        <thead>
+            <tr>
+                <th class="sortable" data-col="rank" data-type="num"># <span class="sort-indicator">▲</span></th>
+                <th class="sortable" data-col="symbol" data-type="str">Symbol <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="category" data-type="str">Category <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="score" data-type="num">Quality Score <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="dividend_yield" data-type="num">Div Yield % <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="dividend_growth_cagr" data-type="num">Div Growth CAGR % <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="years_of_growth" data-type="num">Years <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="days_on_list" data-type="num">Days on List <span class="sort-indicator">⇅</span></th>
+                <th class="sortable" data-col="technical_timing_score" data-type="num">Timing <span class="sort-indicator">⇅</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in top20 %}
+            {% set cat_lower = entry.category | default('balanced') | lower | replace(' ', '-') %}
+            {% set score = entry.score | default(0) %}
+            {% set score_class = 'score-high' if score >= 70 else ('score-medium' if score >= 40 else 'score-low') %}
+            <tr>
+                <td class="mono">{{ entry.rank | default(loop.index) }}</td>
+                <td><strong>{{ entry.symbol }}</strong></td>
+                <td><span class="badge badge-cat-{{ cat_lower }}">{{ entry.category | default('—') }}</span></td>
+                <td class="mono">
+                    <span class="{{ score_class }}">
+                        <span class="score-bar"><span class="score-bar-fill" style="width:{{ score }}%"></span></span>
+                        {{ "%.1f" | format(score) }}
+                    </span>
+                </td>
+                <td class="mono">{{ "%.2f" | format((entry.dividend_yield | default(0)) * 100) }}%</td>
+                <td class="mono">{{ "%.1f" | format((entry.dividend_growth_cagr | default(0)) * 100) }}%</td>
+                <td class="mono">{{ entry.years_of_growth | default('—') }}</td>
+                <td class="mono">{{ entry.days_on_list | default(0) }}</td>
+                <td class="mono">{{ "%.1f" | format(entry.technical_timing_score | default(0)) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card" style="padding:2rem; text-align:center; color:var(--text-muted);">
+    <p>No DGI screening results yet. Run the screener to populate this table.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    /* ── Trigger DGI screener ── */
+    window.triggerDgi = async function() {
+        var btn = document.getElementById('btnRunDgi');
+        btn.classList.add('running');
+        btn.textContent = '⏳ Running…';
+        btn.disabled = true;
+        try {
+            var res = await fetch('/api/trigger/dgi_screener', { method: 'POST' });
+            var data = await res.json();
+            if (!res.ok) { btn.textContent = '❌ ' + (data.error || 'Error'); btn.classList.replace('running','error'); return; }
+            // Poll status
+            var poll = setInterval(async function() {
+                try {
+                    var sr = await fetch('/api/trigger/dgi_screener/status');
+                    var sd = await sr.json();
+                    if (!sd.running) {
+                        clearInterval(poll);
+                        btn.classList.replace('running','done');
+                        btn.textContent = '✅ Done — Reloading…';
+                        setTimeout(function() { location.reload(); }, 1500);
+                    }
+                } catch(_) {}
+            }, 3000);
+        } catch(e) {
+            btn.textContent = '❌ ' + e.message;
+            btn.classList.replace('running','error');
+        }
+    };
+
+    /* ── Sortable table ── */
+    var table = document.getElementById('dgiTable');
+    if (!table) return;
+    var headers = table.querySelectorAll('th.sortable');
+    var currentSort = { col: 'rank', asc: true };
+
+    headers.forEach(function(th) {
+        th.addEventListener('click', function() {
+            var col = th.dataset.col;
+            var type = th.dataset.type;
+            var asc = (currentSort.col === col) ? !currentSort.asc : true;
+            currentSort = { col: col, asc: asc };
+
+            // Update indicators
+            headers.forEach(function(h) { h.classList.remove('sort-active'); h.querySelector('.sort-indicator').textContent = '⇅'; });
+            th.classList.add('sort-active');
+            th.querySelector('.sort-indicator').textContent = asc ? '▲' : '▼';
+
+            var tbody = table.querySelector('tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            var colIdx = Array.from(th.parentNode.children).indexOf(th);
+
+            rows.sort(function(a, b) {
+                var at = a.children[colIdx].textContent.trim().replace('%','');
+                var bt = b.children[colIdx].textContent.trim().replace('%','');
+                if (type === 'num') {
+                    at = parseFloat(at) || 0;
+                    bt = parseFloat(bt) || 0;
+                    return asc ? at - bt : bt - at;
+                }
+                return asc ? at.localeCompare(bt) : bt.localeCompare(at);
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+        });
+    });
+})();
+</script>
+{% endblock %}
