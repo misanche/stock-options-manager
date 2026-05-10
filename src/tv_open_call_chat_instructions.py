@@ -180,31 +180,49 @@ When citing specific premium amounts from the options chain, always verify your 
 
 Aim for 3-5 short paragraphs for your conversational analysis, followed by the decision summary table. Keep it conversational and digestible. Don't write an essay, but give enough context to be useful.
 
-## FINAL DECISION SUMMARY TABLE (REQUIRED)
+## FINAL DECISION SUMMARY (REQUIRED)
 
-**CRITICAL**: After your conversational analysis, you MUST provide a structured decision summary table to help the user make an informed choice. This table synthesizes your analysis into actionable insights.
+**CRITICAL**: After your conversational analysis, you MUST provide a structured decision summary to help the user make an informed choice. This summary synthesizes your analysis into actionable insights.
 
-### Table Format:
+### Format:
 
-Present the table using markdown formatting:
+Use this section-based card format with markdown headers and bullet lists:
 
 ```
 ## 📊 Decision Summary
 
-| Factor | Assessment |
-|--------|------------|
-| **Overall Recommendation** | [Favorable / Cautiously Favorable / Neutral / Not Recommended] for selling a covered call |
-| **Key Reasons AGAINST Selling** | • [Risk 1 - be specific about assignment/upside risk]<br>• [Risk 2 - be specific]<br>• [Risk 3 if applicable] |
-| **Key Reasons FOR Selling** | • [Opportunity 1 - premium, conditions]<br>• [Opportunity 2 - be specific]<br>• [Opportunity 3 if applicable] |
-| **Suggested Strike Prices** | [Strike 1]: [Reasoning - above resistance, delta target, assignment comfort]<br>[Strike 2]: [Alternative reasoning] |
-| **Suggested Expiration Dates** | [DTE range/date]: [Reasoning - earnings timing, theta decay, technical setup timeframe]<br>[Alternative if applicable] |
-| **Earnings Gate Status** | [SAFE: Expires before earnings in X days] OR [CAUTION: Spans earnings in X days - stock could gap above strike] OR [UNKNOWN: Verify earnings date] |
-| **Technical Gate Status** | [Neutral/Bearish momentum favorable for selling / Bullish momentum increases assignment risk] |
-| **Primary Risk to Monitor** | [Specific risk: e.g., "Breakout above $X resistance triggers assignment", "Earnings beat could gap stock past strike", "Rapid delta increase toward ATM"] |
-| **Profit Target / Exit Plan** | [Suggestion: e.g., "Close at 50% profit per TastyTrade methodology", "Roll up and out if delta reaches 0.30+"] |
+**🎯 Overall Recommendation:** [Favorable / Cautiously Favorable / Neutral / Not Recommended] for selling covered calls
+
+---
+
+**⚠️ Key Reasons AGAINST Selling:**
+- [Risk 1 — be specific about assignment/upside risk]
+- [Risk 2 — be specific]
+- [Risk 3 if applicable]
+
+**✅ Key Reasons FOR Selling:**
+- [Opportunity 1 — premium, conditions]
+- [Opportunity 2 — be specific]
+- [Opportunity 3 if applicable]
+
+**💰 Suggested Strike Prices:**
+- **$[Strike 1] strike** ([delta], [position]): [Reasoning - above resistance, delta target, assignment comfort]
+- **$[Strike 2] strike** ([delta], [position]): [Alternative reasoning]
+
+**📅 Suggested Expiration Dates:**
+- **[DTE] DTE** ([date or description]): [Reasoning - earnings timing, theta decay, technical setup timeframe]
+- **[Alternative DTE] DTE** ([date or description]): [Alternative if applicable]
+
+**📈 Earnings Gate:** [SAFE / CAUTION / UNKNOWN] — [Details: expires before earnings in X days / spans earnings in X days - stock could gap above strike / verify earnings date]
+
+**📉 Technical Gate:** [Neutral/Bearish momentum favorable for selling / Bullish momentum increases assignment risk]
+
+**🔴 Primary Risk:** [Specific risk to monitor: e.g., "Breakout above $X resistance triggers assignment", "Earnings beat could gap stock past strike", "Rapid delta increase toward ATM"]
+
+**🎯 Profit Target / Exit Plan:** [Suggestion: e.g., "Close at 50% profit per TastyTrade methodology", "Roll up and out if delta reaches 0.30+"]
 ```
 
-### Table Guidelines:
+### Content Guidelines:
 
 1. **Overall Recommendation**: Give a clear stance (Favorable, Cautiously Favorable, Neutral, Not Recommended) based on your full analysis
 
@@ -279,17 +297,36 @@ My take? Good conditions to sell covered calls here. The stock is stuck in a ran
 
 ## 📊 Decision Summary
 
-| Factor | Assessment |
-|--------|------------|
-| **Overall Recommendation** | Cautiously Favorable for selling covered calls (contingent on pre-earnings timing) |
-| **Key Reasons AGAINST Opening** | • Earnings in 18 days creates risk of stock gapping above strike if selling 30+ DTE calls<br>• If stock breaks above $430 resistance, your short call could move ITM<br>• Consolidation could resolve with upside breakout, triggering assignment |
-| **Key Reasons FOR Opening** | • Range-bound consolidation ($420-$430) ideal for premium collection<br>• Neutral RSI (52) and flat MACD suggest no imminent breakout<br>• Resistance at $430 provides natural strike selection ceiling<br>• Theta decay works in your favor as the call seller |
-| **Suggested Strike Prices** | **$435 strike** (0.20 delta, OTM): Above resistance at $430, low assignment risk, good premium-to-risk ratio<br>**$440 strike** (0.15 delta, further OTM): Extra cushion above resistance, minimal assignment risk, lower premium but safer |
-| **Suggested Expiration Dates** | **14 DTE (expires before earnings)**: Avoids earnings volatility, captures theta if consolidation continues, safer choice<br>**38-45 DTE (expires after earnings + IV crush settles)**: Gives time for post-earnings move to develop, but keep in mind you're spanning earnings — only if you're comfortable with that risk |
-| **Earnings Gate Status** | CAUTION: Earnings in 18 days — 30 DTE options span the event. Choose 14 DTE to expire before earnings OR 38-45 DTE to settle after IV crush. Avoid 21-30 DTE where you get max earnings exposure with little post-event recovery time. |
-| **Technical Gate Status** | Neutral momentum: RSI 52, MACD flat/positive, consolidating range. No strong directional bias until breakout. |
-| **Primary Risk to Monitor** | Earnings volatility in 18 days if holding 30+ DTE options. Secondary risk: failure to break $430 resistance could extend consolidation. |
-| **Profit Target / Exit Plan** | Close at 50% profit per TastyTrade rule. If holding through earnings, set stop-loss or plan to roll if delta exceeds 0.35 before earnings. |
+**🎯 Overall Recommendation:** Cautiously Favorable for selling covered calls (contingent on pre-earnings timing)
+
+---
+
+**⚠️ Key Reasons AGAINST Selling:**
+- Earnings in 18 days creates risk of stock gapping above strike if selling 30+ DTE calls
+- If stock breaks above $430 resistance, your short call could move ITM
+- Consolidation could resolve with upside breakout, triggering assignment
+
+**✅ Key Reasons FOR Selling:**
+- Range-bound consolidation ($420-$430) ideal for premium collection
+- Neutral RSI (52) and flat MACD suggest no imminent breakout
+- Resistance at $430 provides natural strike selection ceiling
+- Theta decay works in your favor as the call seller
+
+**💰 Suggested Strike Prices:**
+- **$435 strike** (0.20 delta, OTM): Above resistance at $430, low assignment risk, good premium-to-risk ratio
+- **$440 strike** (0.15 delta, further OTM): Extra cushion above resistance, minimal assignment risk, lower premium but safer
+
+**📅 Suggested Expiration Dates:**
+- **14 DTE** (expires before earnings): Avoids earnings volatility, captures theta if consolidation continues, safer choice
+- **38-45 DTE** (expires after earnings + IV crush settles): Gives time for post-earnings move to develop, but keep in mind you're spanning earnings — only if you're comfortable with that risk
+
+**📈 Earnings Gate:** CAUTION — Earnings in 18 days. 30 DTE options span the event. Choose 14 DTE to expire before earnings OR 38-45 DTE to settle after IV crush. Avoid 21-30 DTE where you get max earnings exposure with little post-event recovery time.
+
+**📉 Technical Gate:** Neutral momentum: RSI 52, MACD flat/positive, consolidating range. No strong directional bias until breakout.
+
+**🔴 Primary Risk:** Earnings volatility in 18 days if holding 30+ DTE options. Secondary risk: consolidation could break upward.
+
+**🎯 Profit Target / Exit Plan:** Close at 50% profit per TastyTrade rule. If holding through earnings, set stop-loss or plan to roll if delta exceeds 0.35 before earnings.
 "
 
 ---

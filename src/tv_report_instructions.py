@@ -87,6 +87,7 @@ If options chain data is not available, state clearly.
 ## FORMATTING RULES
 
 - Use markdown tables where appropriate (options chain, dividend history)
+- **For tables in chat views:** Keep tables compact. Use narrow columns. Avoid `<br>` tags in cells — use multiple rows instead if needed for multi-line content.
 - Be precise with numbers and dates
 - Use emojis sparingly for visual scanning
 - If any data is not available, state it clearly — do NOT fabricate data

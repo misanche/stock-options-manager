@@ -556,6 +556,8 @@ textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 }
 
 .chat-bubble.markdown-body table {
+    display: block;
+    overflow-x: auto;
     border-collapse: collapse;
     margin: 0.5em 0;
     width: 100%;
@@ -564,12 +566,25 @@ textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 .chat-bubble.markdown-body th,
 .chat-bubble.markdown-body td {
     border: 1px solid var(--border);
-    padding: 0.35em 0.6em;
+    padding: 0.5em 0.75em;
     text-align: left;
+    vertical-align: top;
 }
 .chat-bubble.markdown-body th {
-    background: rgba(0,0,0,0.2);
-    font-weight: 500;
+    background: var(--surface-elevated);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.chat-bubble.markdown-body tbody tr:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+}
+.chat-bubble.markdown-body tbody tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.1);
+}
+.chat-bubble.markdown-body td br {
+    display: block;
+    content: "";
+    margin: 0.35em 0;
 }
 
 .chat-bubble.markdown-body blockquote {

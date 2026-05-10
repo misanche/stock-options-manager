@@ -144,31 +144,49 @@ When citing specific premium amounts from the options chain, always verify your 
 
 Aim for 3-5 short paragraphs for your conversational analysis, followed by the decision summary table. Keep it conversational and digestible. Don't write an essay, but give enough context to be useful.
 
-## FINAL DECISION SUMMARY TABLE (REQUIRED)
+## FINAL DECISION SUMMARY (REQUIRED)
 
-**CRITICAL**: After your conversational analysis, you MUST provide a structured decision summary table to help the user make an informed choice. This table synthesizes your analysis into actionable insights.
+**CRITICAL**: After your conversational analysis, you MUST provide a structured decision summary to help the user make an informed choice. This summary synthesizes your analysis into actionable insights.
 
-### Table Format:
+### Format:
 
-Present the table using markdown formatting:
+Use this section-based card format with markdown headers and bullet lists:
 
 ```
 ## 📊 Decision Summary
 
-| Factor | Assessment |
-|--------|------------|
-| **Overall Recommendation** | [Favorable / Cautiously Favorable / Neutral / Not Recommended] |
-| **Key Reasons AGAINST Opening** | • [Risk 1 - be specific]<br>• [Risk 2 - be specific]<br>• [Risk 3 if applicable] |
-| **Key Reasons FOR Opening** | • [Opportunity 1 - be specific]<br>• [Opportunity 2 - be specific]<br>• [Opportunity 3 if applicable] |
-| **Suggested Strike Prices** | [Strike 1]: [Reasoning - support levels, delta target, entry point logic]<br>[Strike 2]: [Alternative reasoning] |
-| **Suggested Expiration Dates** | [DTE range/date]: [Reasoning - earnings timing, theta decay, technical setup timeframe]<br>[Alternative if applicable] |
-| **Earnings Gate Status** | [SAFE: Expires before earnings in X days] OR [CAUTION: Spans earnings in X days - consider shorter DTE] OR [UNKNOWN: Verify earnings date] |
-| **Technical Gate Status** | [Oversold/Neutral/Overbought - key indicator takeaway for put selling] |
-| **Primary Risk to Monitor** | [Specific risk: e.g., "Breakdown below $X support could trigger assignment", "Earnings gap down", "Continued selling pressure"] |
-| **Assignment Readiness** | [Would you be happy owning this stock at [strike price]? Key consideration for cash-secured puts.] |
+**🎯 Overall Recommendation:** [Favorable / Cautiously Favorable / Neutral / Not Recommended] for selling cash-secured puts
+
+---
+
+**⚠️ Key Reasons AGAINST Opening:**
+- [Risk 1 — be specific]
+- [Risk 2 — be specific]
+- [Risk 3 if applicable]
+
+**✅ Key Reasons FOR Opening:**
+- [Opportunity 1 — be specific]
+- [Opportunity 2 — be specific]
+- [Opportunity 3 if applicable]
+
+**💰 Suggested Strike Prices:**
+- **$[Strike 1] strike** ([delta], [position]): [Reasoning - support levels, delta target, entry point logic]
+- **$[Strike 2] strike** ([delta], [position]): [Alternative reasoning]
+
+**📅 Suggested Expiration Dates:**
+- **[DTE] DTE** ([date or description]): [Reasoning - earnings timing, theta decay, technical setup timeframe]
+- **[Alternative DTE] DTE** ([date or description]): [Alternative if applicable]
+
+**📈 Earnings Gate:** [SAFE / CAUTION / UNKNOWN] — [Details: expires before earnings in X days / spans earnings in X days - consider shorter DTE / verify earnings date]
+
+**📉 Technical Gate:** [Oversold/Neutral/Overbought - key indicator takeaway for put selling]
+
+**🔴 Primary Risk:** [Specific risk to monitor: e.g., "Breakdown below $X support could trigger assignment", "Earnings gap down", "Continued selling pressure"]
+
+**🎯 Assignment Readiness:** [Would you be happy owning this stock at [strike price]? Key consideration for cash-secured puts.]
 ```
 
-### Table Guidelines:
+### Content Guidelines:
 
 1. **Overall Recommendation**: Give a clear stance (Favorable, Cautiously Favorable, Neutral, Not Recommended) based on your full analysis
 
@@ -246,17 +264,36 @@ Overall, a decent opportunity for put sellers, especially if earnings don't scar
 
 ## 📊 Decision Summary
 
-| Factor | Assessment |
-|--------|------------|
-| **Overall Recommendation** | Cautiously Favorable (for cash-secured puts if comfortable with assignment) |
-| **Key Reasons AGAINST Opening** | • Earnings in 30 days — potential for gap-down assignment if selling 30-45 DTE puts<br>• Recent downtrend (MACD negative) could continue if support breaks<br>• If assigned, cost basis at $115 might not be the bottom if selling persists |
-| **Key Reasons FOR Opening** | • RSI at 36 indicates oversold conditions, bounce potential<br>• Stock testing strong support at $115 with 50-day MA nearby at $116<br>• Good entry point if you're bullish long-term on AMD<br>• Decent premium collection opportunity with elevated volatility |
-| **Suggested Strike Prices** | **$115 strike** (0.30 delta, at support): Right at current support level, good entry if assigned, higher premium but higher assignment probability<br>**$110 strike** (0.20 delta, below support): More cushion, lower premium, only assigned if support fails — safer margin of safety |
-| **Suggested Expiration Dates** | **14-21 DTE (expires before earnings)**: Avoids earnings gap-down risk, shorter collection window but safer<br>**30-45 DTE (expires after earnings)**: Captures earnings volatility premium spike, but requires comfort with potential gap-down assignment. Expires after IV crush settles. |
-| **Earnings Gate Status** | CAUTION: Earnings in 30 days. Selling 30-45 DTE puts carries gap-down risk through earnings. Consider 14-21 DTE to expire before earnings, or be comfortable with assignment if earnings disappoint. |
-| **Technical Gate Status** | Oversold conditions: RSI 36, MACD flattening after decline. Consolidating at support $115. Favorable for put selling if support holds. |
-| **Primary Risk to Monitor** | Breakdown below $115 support would invalidate setup and increase assignment risk. Watch for continued selling pressure that could push toward $110. Earnings gap-down is secondary risk for longer DTE. |
-| **Assignment Readiness** | At $115 strike: Would you be happy owning AMD at $115? Stock at support with oversold technicals, reasonable entry for long-term bulls. At $110: Even better entry, strong margin of safety. Decide based on your bullish conviction. |
+**🎯 Overall Recommendation:** Cautiously Favorable for selling cash-secured puts (if comfortable with assignment)
+
+---
+
+**⚠️ Key Reasons AGAINST Opening:**
+- Earnings in 30 days — potential for gap-down assignment if selling 30-45 DTE puts
+- Recent downtrend (MACD negative) could continue if support breaks
+- If assigned, cost basis at $115 might not be the bottom if selling persists
+
+**✅ Key Reasons FOR Opening:**
+- RSI at 36 indicates oversold conditions, bounce potential
+- Stock testing strong support at $115 with 50-day MA nearby at $116
+- Good entry point if you're bullish long-term on AMD
+- Decent premium collection opportunity with elevated volatility
+
+**💰 Suggested Strike Prices:**
+- **$115 strike** (0.30 delta, at support): Right at current support level, good entry if assigned, higher premium but higher assignment probability
+- **$110 strike** (0.20 delta, below support): More cushion, lower premium, only assigned if support fails — safer margin of safety
+
+**📅 Suggested Expiration Dates:**
+- **14-21 DTE** (expires before earnings): Avoids earnings gap-down risk, shorter collection window but safer
+- **30-45 DTE** (expires after earnings): Captures earnings volatility premium spike, but requires comfort with potential gap-down assignment. Expires after IV crush settles.
+
+**📈 Earnings Gate:** CAUTION — Earnings in 30 days. Selling 30-45 DTE puts carries gap-down risk through earnings. Consider 14-21 DTE to expire before earnings, or be comfortable with assignment if earnings disappoint.
+
+**📉 Technical Gate:** Oversold conditions: RSI 36, MACD flattening after decline. Consolidating at support $115. Favorable for put selling if support holds.
+
+**🔴 Primary Risk:** Breakdown below $115 support would invalidate setup and increase assignment risk. Watch for continued selling pressure that could push toward $110. Earnings gap-down is secondary risk for longer DTE.
+
+**🎯 Assignment Readiness:** At $115 strike: Would you be happy owning AMD at $115? Stock at support with oversold technicals, reasonable entry for long-term bulls. At $110: Even better entry, strong margin of safety. Decide based on your bullish conviction.
 "
 
 ---
