@@ -652,6 +652,11 @@ textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
     color: var(--accent-blue);
 }
 .btn-trigger.btn-trigger-blue:hover { background: rgba(73,79,223,0.15); }
+.btn-trigger.btn-trigger-green {
+    border-color: var(--success, #22c55e);
+    color: var(--success, #22c55e);
+}
+.btn-trigger.btn-trigger-green:hover { background: rgba(34,197,94,0.15); }
 .btn-trigger.running {
     color: var(--accent-orange);
     border-color: var(--accent-orange);

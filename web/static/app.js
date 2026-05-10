@@ -124,6 +124,63 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
         });
     }
+    // ── Run DGI Screener button ──
+    var runDgiBtn = document.getElementById('run-dgi-screener');
+    if (runDgiBtn) {
+        var _dgiOrigText = runDgiBtn.textContent;
+
+        runDgiBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            runDgiBtn.disabled = true;
+            runDgiBtn.textContent = '⏳ Triggering…';
+            runDgiBtn.classList.add('running');
+
+            fetch('/api/trigger/dgi_screener', { method: 'POST' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.status === 'triggered') {
+                        runDgiBtn.textContent = '⏳ Running…';
+                        // Poll for completion
+                        var pollId = setInterval(function() {
+                            fetch('/api/trigger/dgi_screener/status')
+                                .then(function(r) { return r.json(); })
+                                .then(function(st) {
+                                    if (!st.running) {
+                                        clearInterval(pollId);
+                                        runDgiBtn.textContent = 'Done ✓';
+                                        runDgiBtn.classList.remove('running');
+                                        runDgiBtn.classList.add('done');
+                                        setTimeout(function() {
+                                            runDgiBtn.textContent = _dgiOrigText;
+                                            runDgiBtn.disabled = false;
+                                            runDgiBtn.classList.remove('done');
+                                        }, 3000);
+                                    }
+                                });
+                        }, 3000);
+                    } else {
+                        runDgiBtn.textContent = '✗ ' + (data.error || 'Error');
+                        runDgiBtn.classList.remove('running');
+                        runDgiBtn.classList.add('error');
+                        setTimeout(function() {
+                            runDgiBtn.textContent = _dgiOrigText;
+                            runDgiBtn.disabled = false;
+                            runDgiBtn.classList.remove('error');
+                        }, 3000);
+                    }
+                })
+                .catch(function() {
+                    runDgiBtn.textContent = '✗ Network error';
+                    runDgiBtn.classList.remove('running');
+                    runDgiBtn.classList.add('error');
+                    setTimeout(function() {
+                        runDgiBtn.textContent = _dgiOrigText;
+                        runDgiBtn.disabled = false;
+                        runDgiBtn.classList.remove('error');
+                    }, 3000);
+                });
+        });
+    }
     // ── Hamburger menu toggle ──
     var hamburger = document.querySelector('.hamburger');
     var topnav = document.querySelector('.topnav');

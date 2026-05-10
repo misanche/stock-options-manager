@@ -2267,6 +2267,58 @@ async def trigger_all_status(request: Request):
     return JSONResponse(dict(status))
 
 
+# ---------------------------------------------------------------------------
+# DGI Screener — manual trigger
+# ---------------------------------------------------------------------------
+
+def _run_dgi_screener_in_background(scheduler, state_ref):
+    """Run the DGI screener in a background thread."""
+    import asyncio
+    from src.dgi_screener import run_dgi_screener
+
+    try:
+        asyncio.run(run_dgi_screener(scheduler.config, scheduler.cosmos))
+    except Exception as e:
+        logger.error("DGI screener trigger error: %s", e)
+    finally:
+        state_ref["running"] = False
+
+
+@app.post("/api/trigger/dgi_screener")
+async def trigger_dgi_screener(request: Request):
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is None or scheduler.config is None:
+        return JSONResponse(
+            {"error": "Scheduler not running — cannot trigger DGI screener"},
+            status_code=503)
+
+    state_ref = getattr(request.app.state, "_dgi_screener_status", None)
+    if state_ref is None:
+        state_ref = {"running": False}
+        request.app.state._dgi_screener_status = state_ref
+
+    if state_ref.get("running"):
+        return JSONResponse(
+            {"error": "DGI screener already running"},
+            status_code=409)
+
+    state_ref["running"] = True
+    thread = threading.Thread(
+        target=_run_dgi_screener_in_background,
+        args=(scheduler, state_ref),
+        daemon=True,
+    )
+    thread.start()
+    return JSONResponse({"status": "triggered", "agent_type": "dgi_screener"})
+
+
+@app.get("/api/trigger/dgi_screener/status")
+async def trigger_dgi_screener_status(request: Request):
+    state_ref = getattr(request.app.state, "_dgi_screener_status", None)
+    running = state_ref.get("running", False) if state_ref else False
+    return JSONResponse({"running": running})
+
+
 # ===========================================================================
 # Chat
 # ===========================================================================
