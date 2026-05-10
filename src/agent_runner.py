@@ -807,7 +807,7 @@ Provide your supervisor audit in the JSON format specified above."""
 {previous_context}
 
 === OUTPUT FORMAT ===
-{ALPHA_OUTPUT_SCHEMA}
+{json.dumps(ALPHA_OUTPUT_SCHEMA, indent=2)}
 
 Provide your alpha advisor analysis in the JSON format specified above."""
 
@@ -829,14 +829,14 @@ Provide your alpha advisor analysis in the JSON format specified above."""
 
             # Parse JSON from response
             alpha_data = None
-            for block in re.findall(r'```json\s*\n(.*?)```', response_text, re.DOTALL):
+            for block in re.findall(r'```(?:json)?\s*\n(.*?)```', response_text, re.DOTALL):
                 try:
                     alpha_data = json.loads(block.strip())
                     break
                 except json.JSONDecodeError:
                     continue
 
-            if alpha_data is None and '"opportunity_strength"' in response_text:
+            if alpha_data is None and ('opportunity_strength' in response_text):
                 for i in range(len(response_text)):
                     if response_text[i] == '{':
                         depth = 0
@@ -846,18 +846,30 @@ Provide your alpha advisor analysis in the JSON format specified above."""
                             elif response_text[j] == '}':
                                 depth -= 1
                                 if depth == 0:
+                                    candidate = response_text[i:j + 1]
                                     try:
-                                        parsed = json.loads(response_text[i:j + 1])
+                                        parsed = json.loads(candidate)
                                         if "opportunity_strength" in parsed:
                                             alpha_data = parsed
                                     except json.JSONDecodeError:
-                                        pass
+                                        # Try fixing single quotes → double quotes
+                                        try:
+                                            fixed = candidate.replace("'", '"')
+                                            parsed = json.loads(fixed)
+                                            if "opportunity_strength" in parsed:
+                                                alpha_data = parsed
+                                                logger.info("Alpha: parsed after single-quote fix")
+                                        except json.JSONDecodeError:
+                                            pass
                                     break
                         if alpha_data is not None:
                             break
 
             if alpha_data is None:
-                logger.warning("Alpha Advisor returned no parseable JSON")
+                logger.warning(
+                    "Alpha Advisor returned no parseable JSON. "
+                    "First 800 chars: %s", response_text[:800],
+                )
                 return None
 
             required = {"opportunity_strength", "alternative"}
