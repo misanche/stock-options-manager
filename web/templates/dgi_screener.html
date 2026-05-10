@@ -57,7 +57,10 @@
                 <input type="range" min="0" max="100" value="0" id="filterTiming" oninput="applyFilters()" class="range-slider">
             </div>
         </div>
-        <button onclick="resetFilters()" class="btn-sm" style="margin-top:0.75rem;background:var(--bg-input);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.75rem;border-radius:var(--radius);cursor:pointer;">Reset Filters</button>
+        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button onclick="applyBeastsFilter()" class="btn-sm" style="background:linear-gradient(135deg,var(--accent),#e67e22);border:none;color:#fff;padding:0.4rem 0.75rem;border-radius:var(--radius);cursor:pointer;font-weight:600;">🐂 Beasts</button>
+            <button onclick="resetFilters()" class="btn-sm" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.75rem;border-radius:var(--radius);cursor:pointer;">Reset Filters</button>
+        </div>
     </div>
 </div>
 
@@ -214,6 +217,15 @@
         });
 
         document.getElementById('filterCount').textContent = 'Showing ' + visibleCount + ' of ' + totalCount;
+    };
+
+    window.applyBeastsFilter = function() {
+        document.getElementById('filterQS').value = 80;
+        document.getElementById('filterDY').value = 25;   // 25/10 = 2.5%
+        document.getElementById('filterDG').value = 10;    // 10%
+        document.getElementById('filterYears').value = 10;
+        document.getElementById('filterTiming').value = 90;
+        applyFilters();
     };
 
     window.resetFilters = function() {

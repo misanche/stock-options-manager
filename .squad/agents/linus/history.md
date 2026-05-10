@@ -1614,3 +1614,9 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - "Analyze Symbol" button added next to "Run DGI Screener" on `web/templates/dgi_screener.html` with inline input field that navigates to `/dgi/analyze/{SYMBOL}`.
 - **Key Pattern**: When exposing scoring internals for a diagnostic/analysis view, create a `_detailed` variant of the scoring function rather than modifying the existing one — keeps the hot path lean and avoids breaking existing consumers.
 - **Files Modified**: `src/dgi_metrics.py`, `src/dgi_screener.py`, `web/app.py`, `web/templates/dgi_screener.html`, `web/templates/dgi_analysis.html` (new)
+
+### Beasts Filter Preset Button (2026-05)
+- Added "🐂 Beasts" preset button to `web/templates/dgi_screener.html` filter panel.
+- The button sets all 5 sliders (QS≥80, DY≥2.5%, DG≥10%, Years≥10, Timing≥90) and calls `applyFilters()`.
+- Key data formats in DGI screener: `dividend_yield` stored as percentage number (2.5 = 2.5%), `dividend_cagr_5y` stored as decimal (0.10 = 10%), sliders use integer values with DY divided by 10.
+- Pattern: preset buttons reuse `applyFilters()` by setting slider values programmatically — no need for separate filter logic.
