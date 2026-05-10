@@ -1710,6 +1710,7 @@ async def settings_config_page(request: Request):
     dgi_cfg = config.get("dgi_screener", {})
     dgi_enabled = dgi_cfg.get("enabled", True)
     dgi_cron = dgi_cfg.get("cron", "0 6 * * 1-5")
+    dgi_top_n = dgi_cfg.get("top_n", 40)
     
     # Resolve env vars for display
     if telegram_bot_token.startswith("${"):
@@ -1825,6 +1826,7 @@ async def settings_config_page(request: Request):
         "options_chain_next_run": options_chain_next_run,
         "dgi_enabled": dgi_enabled,
         "dgi_cron": dgi_cron,
+        "dgi_top_n": dgi_top_n,
         "dgi_symbols": dgi_cfg.get("symbols", ""),
         "dgi_last_run": dgi_last_run,
         "dgi_next_run": dgi_next_run,
@@ -1966,6 +1968,12 @@ async def settings_config_save(request: Request):
     dgi_enabled = form.get("dgi_enabled") == "true"
     dgi_cron = str(form.get("dgi_cron", "0 6 * * 1-5")).strip()
     dgi_symbols = str(form.get("dgi_symbols", "")).strip()
+    dgi_top_n_str = str(form.get("dgi_top_n", "40")).strip()
+    try:
+        dgi_top_n = int(dgi_top_n_str)
+        dgi_top_n = max(1, min(500, dgi_top_n))
+    except ValueError:
+        dgi_top_n = 40
     
     if dgi_cron:
         try:
@@ -1976,6 +1984,7 @@ async def settings_config_save(request: Request):
                 cosmos_settings["dgi_screener"]["enabled"] = dgi_enabled
                 cosmos_settings["dgi_screener"]["cron"] = dgi_cron
                 cosmos_settings["dgi_screener"]["symbols"] = dgi_symbols
+                cosmos_settings["dgi_screener"]["top_n"] = dgi_top_n
                 _save_settings_to_cosmos(cosmos, cosmos_settings)
             
             config = _load_config()
@@ -1983,6 +1992,7 @@ async def settings_config_save(request: Request):
             config["dgi_screener"]["enabled"] = dgi_enabled
             config["dgi_screener"]["cron"] = dgi_cron
             config["dgi_screener"]["symbols"] = dgi_symbols
+            config["dgi_screener"]["top_n"] = dgi_top_n
             _write_config(config)
             saved.append("DGI screener")
             
@@ -2025,6 +2035,7 @@ async def settings_config_save(request: Request):
     dgi_cfg = config.get("dgi_screener", {})
     dgi_en = dgi_cfg.get("enabled", True)
     dgi_cr = dgi_cfg.get("cron", "0 6 * * 1-5")
+    dgi_tn = dgi_cfg.get("top_n", 40)
 
     return templates.TemplateResponse("settings_config.html", {
         "request": request,
@@ -2041,6 +2052,7 @@ async def settings_config_save(request: Request):
         "options_chain_cron": oc_cron,
         "dgi_enabled": dgi_en,
         "dgi_cron": dgi_cr,
+        "dgi_top_n": dgi_tn,
         "dgi_symbols": dgi_cfg.get("symbols", ""),
     })
 

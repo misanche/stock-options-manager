@@ -195,6 +195,16 @@
                               style="width:100%; padding:0.6rem 0.8rem; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:0.8rem; border-radius:var(--radius); resize:vertical;">{{ dgi_symbols }}</textarea>
                     <small style="display:block; margin-top:0.3rem; color:var(--text-muted); font-size:0.75rem;">S&amp;P 500 tickers separated by commas (e.g. AAPL,ABBV,ABT,...)</small>
                 </div>
+
+                <div style="margin-bottom:0.75rem;">
+                    <label style="display:block; font-size:0.85rem; color:var(--text-muted); margin-bottom:0.3rem;">
+                        Number of stocks in Top list
+                        <span style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;" title="How many top-ranked stocks to keep after scoring (default: 40)">ⓘ</span>
+                    </label>
+                    <input type="number" name="dgi_top_n" value="{{ dgi_top_n }}" min="1" max="500" step="1" placeholder="40"
+                           style="width:120px; padding:0.6rem 0.8rem; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:0.85rem; border-radius:var(--radius);">
+                    <small style="display:block; margin-top:0.3rem; color:var(--text-muted); font-size:0.75rem;">Number of top-scoring stocks to include in the DGI list (default: 40)</small>
+                </div>
             </div>
         </div>
     </div>
