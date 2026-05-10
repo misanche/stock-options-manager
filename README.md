@@ -162,7 +162,10 @@ The Supervisor Agent is a separate LLM instance that audits every actionable tra
 - **Never manufactures objections:** Only flags genuine data misreads, ignored risks, logical gaps, or overlooked alternatives
 - **Premium yield benchmarks:** Knows that CSP >1.5%/month is GOOD, CC >1%/month is GOOD — never flags good yields as "low"
 - **Premium-expiration verification:** Rule #9 verifies that premium values match the correct expiration key in the options chain (cross-expiration mix-ups are a known error pattern)
+- **Premium correction awareness:** When the programmatic premium validator corrects agent-reported values (`premium_corrected: true`), the supervisor automatically treats this as at minimum MODERATE — data corrections always warrant scrutiny
 - **Non-blocking:** Supervisor failures never affect the primary decision flow
+
+**Programmatic premium validation:** Before the Supervisor and Alpha Advisor run, the agent runner performs a programmatic cross-check (`_validate_premium_against_chain()`) comparing the primary agent's reported premium and delta against the actual options chain data. If mismatches are found, the values are corrected in-place and `premium_corrected: true` is set on the activity. This catches LLM hallucinations (e.g., agent reports premium from a different expiration) before they reach the quality gates.
 
 **Audit playbooks (9 decision types):**
 
@@ -198,11 +201,18 @@ The Alpha Advisor is a separate LLM instance that provides alternative, more agg
     "action": "What the aggressive alternative recommends",
     "rationale": "Technical/quantitative evidence supporting this",
     "additional_risk": "Extra risk vs. conservative choice",
-    "premium_comparison": "Conservative: $X (Y%/mo) vs. Aggressive: $A (B%/mo)"
+    "premium_comparison": "Conservative: $X (Y%/mo) vs. Aggressive: $A (B%/mo)",
+    "strike": 55.0,
+    "expiration": "2026-07-18",
+    "premium": 2.10,
+    "delta": -0.28,
+    "dte": 39
   },
   "one_liner": "Short summary for Telegram notification"
 }
 ```
+
+The `strike`, `expiration`, `premium`, `delta`, and `dte` fields are optional — included when the Alpha Advisor suggests a specific alternative contract (MODERATE/STRONG), omitted for NONE results. Values must come from the actual options chain, never invented.
 
 **What it suggests (examples):**
 - **SELL:** Closer strike with higher delta (0.30 vs. 0.20) for 3x more premium, when support levels justify it
@@ -221,9 +231,8 @@ The Alpha Advisor is a separate LLM instance that provides alternative, more agg
 When a symbol or position has 5+ consecutive WAIT decisions (`PROLONGED_WAIT_THRESHOLD = 5`), both the Supervisor and Alpha Advisor are triggered. The Supervisor checks if continued waiting is losing opportunities; the Alpha Advisor checks if an aggressive entry or adjustment could work. A cooldown of 3 WAITs (`SUPERVISOR_COOLDOWN = 3`) prevents repeated reviews — after a review, at least 3 more WAITs must occur before triggering again.
 
 **Web dashboard integration:**
-- **Activity detail page**: Two collapsible panels — "Supervisor" (🔍) with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) and "Alpha Advisor" (🚀) with opportunity badges (🟢 NONE, 🔵 MODERATE, 🔵 STRONG)
+- **Activity detail page**: Two collapsible panels — "Supervisor" (🛡️) with color-coded badges (🟢 WEAK, 🟡 MODERATE, 🔴 STRONG) and "Alpha Advisor" (🔍) with opportunity badges (🟢 NONE, 🔵 MODERATE, 🔵 STRONG). Supervisor panel always appears when a `supervisor_view` exists — WEAK panels auto-collapse on page load, MODERATE/STRONG start expanded. Alpha Advisor panels show trade details (strike, expiration, premium, delta, DTE) when alternatives are suggested.
 - **Dashboard & symbol detail**: 🤔 indicator icon on WAIT activities that have MODERATE or STRONG supervisor opinions (STRONG gets a pulse animation)
-- **WEAK/NONE panels** auto-collapse on page load to reduce noise
 
 ### Position Lifecycle
 
