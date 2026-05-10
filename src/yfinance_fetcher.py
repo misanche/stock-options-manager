@@ -46,7 +46,10 @@ class YFinanceFetcher:
                 ticker = yf.Ticker(symbol)
 
                 info = ticker.info
-                if not info or info.get("regularMarketPrice") is None:
+                if not info or (
+                    info.get("regularMarketPrice") is None
+                    and info.get("currentPrice") is None
+                ):
                     logger.warning("%s: no market data returned", symbol)
                     return None
 

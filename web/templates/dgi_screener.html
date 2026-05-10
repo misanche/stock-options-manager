@@ -36,8 +36,10 @@
         </thead>
         <tbody>
             {% for entry in top20 %}
+            {% set metrics = entry.metrics | default({}) %}
+            {% set technicals = entry.technicals | default({}) %}
             {% set cat_lower = entry.category | default('balanced') | lower | replace(' ', '-') %}
-            {% set score = entry.score | default(0) %}
+            {% set score = entry.quality_score | default(0) %}
             {% set score_class = 'score-high' if score >= 70 else ('score-medium' if score >= 40 else 'score-low') %}
             <tr>
                 <td class="mono">{{ entry.rank | default(loop.index) }}</td>
@@ -49,11 +51,11 @@
                         {{ "%.1f" | format(score) }}
                     </span>
                 </td>
-                <td class="mono">{{ "%.2f" | format((entry.dividend_yield | default(0)) * 100) }}%</td>
-                <td class="mono">{{ "%.1f" | format((entry.dividend_growth_cagr | default(0)) * 100) }}%</td>
-                <td class="mono">{{ entry.years_of_growth | default('—') }}</td>
+                <td class="mono">{{ "%.2f" | format((metrics.dividend_yield | default(0)) * 100) }}%</td>
+                <td class="mono">{{ "%.1f" | format((metrics.dividend_cagr_5y | default(0)) * 100) }}%</td>
+                <td class="mono">{{ metrics.years_consecutive_increases | default('—') }}</td>
                 <td class="mono">{{ entry.days_on_list | default(0) }}</td>
-                <td class="mono">{{ "%.1f" | format(entry.technical_timing_score | default(0)) }}</td>
+                <td class="mono">{{ "%.1f" | format(technicals.score | default(0)) }}</td>
                 <td class="actions-cell">
                     <button class="btn-trigger-row btn-dgi-analyze" data-symbol="{{ entry.symbol }}" title="Run CSP analysis for {{ entry.symbol }}">▶</button>
                     <button class="btn-trigger-row btn-dgi-add" data-symbol="{{ entry.symbol }}" data-exchange="NYSE" title="Add {{ entry.symbol }} to watchlist with CSP enabled">➕</button>
