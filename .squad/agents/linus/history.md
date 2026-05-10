@@ -1480,3 +1480,18 @@ This orchestration event consolidates all pending team decisions from 2026-04-23
 - Added lighter-weight verification guidance to both chat instruction files (`tv_open_call_chat_instructions.py`, `tv_open_put_chat_instructions.py`).
 - **Files Modified**: `options_chain_parser.py`, `tv_cash_secured_put_instructions.py`, `tv_covered_call_instructions.py`, `tv_open_call_roll_instructions.py`, `tv_open_put_roll_instructions.py`, `tv_open_call_chat_instructions.py`, `tv_open_put_chat_instructions.py`
 - **Key pattern**: When an LLM reads a nested dict keyed by multiple dimensions (expiration → strike → contract), it can silently cross dimensions. The fix is to require citing the full key path as a mandatory response step — making the lookup explicit forces the model to self-check.
+
+---
+
+## 2026-05-10: DGI Screener Display & Data Fixes
+
+✅ **Complete**
+
+Fixed 3 critical issues in DGI screener:
+1. **Dividend Yield Display Bug**: Removed ×100 multiplier (yfinance already returns percentages). Template was showing 118% instead of 1.18%.
+2. **Detail Modal**: Added interactive row-click modal with Overview/Fundamentals/Technical sections reusing existing CSS.
+3. **Years_Consecutive_Increases Partial-Year Bug**: Fixed by excluding incomplete current year from annual totals in `calculate_years_consecutive_increases()` and `calculate_dividend_cagr()`.
+
+Files modified: `web/templates/dgi_screener.html`, `src/yfinance_fetcher.py`
+
+Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thresholds 0.015, 0.02). Verify accuracy after next screener run.
