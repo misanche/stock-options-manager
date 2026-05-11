@@ -9,6 +9,15 @@
 
 ## Learnings
 
+### Premium=0.0 Root Cause Analysis & Fix (2026-05)
+- ALL agents returning premium=0.0 across covered call and cash-secured put agents.
+- Root cause investigation traced the full pipeline: TradingView Playwright interception → parser → filter → serialization → agent consumption → validation.
+- **Most likely root cause**: TradingView migrated their options chain page from `scan2` endpoints to `scan`/`screener`/`scan3` endpoints. The `_OPTIONS_SCAN_URLS` only matched `scan2`, so no API responses were captured, the DOM text fallback was used, the parser failed to find JSON → empty chain → agents got raw text → defaulted to premium=0.0.
+- **Secondary hypothesis**: TradingView changed field names in their API response (e.g., "bid" → "option_bid"). The parser would store bid=None, agents see null, output 0.0.
+- Fix applied in 3 layers: (1) Broadened URL matching to cover scan/scan2/scan3/screener + added fallback matching for any scanner.tradingview.com response with "symbols-options"; (2) Added field name aliases to `_FIELD_MAP`; (3) Added diagnostic logging at ERROR level for missed scanner URLs and missing bid/ask fields.
+- Also fixed broken tests in `test_options_chain_parser.py` — tests used `[0]` list indexing but parser was refactored to strike-keyed dict format at commit `7be7d82`. Tests were never updated.
+- Key pattern: When intercepting third-party API responses by URL matching, URL patterns MUST be broadly defined and logged when they miss. Third parties change endpoints without notice. Always have a fallback matcher and diagnostic logging.
+
 ### DGI Screener Logging & Silent Exception Fix (2026-05)
 - User reported screener runs visible in web UI but CosmosDB entries NOT being updated — no new `last_updated`, no `quality_detail` field despite commit 2415b47.
 - Root cause investigation: `_run_dgi_screener_in_background()` in `web/app.py` catches all exceptions but logged them WITHOUT `exc_info=True` — full tracebacks were silently lost. Same issue in the CosmosDB upsert error handler in `dgi_screener.py`.
