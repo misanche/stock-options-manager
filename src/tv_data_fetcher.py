@@ -1213,11 +1213,23 @@ class TradingViewFetcher:
     # Options chain — Playwright (unchanged)
     # ------------------------------------------------------------------
 
-    # Exact TradingView scanner endpoints that carry options chain data
+    # TradingView scanner/screener endpoints that carry options chain data.
+    # Match broadly: TradingView may migrate between scan, scan2, scan3,
+    # and screener endpoints without notice.
     _OPTIONS_SCAN_URLS = [
         "scanner.tradingview.com/global/scan2?label-product=symbols-options",
         "scanner.tradingview.com/options/scan2?label-product=symbols-options",
+        # Broader patterns to catch endpoint migrations
+        "scanner.tradingview.com/global/scan?label-product=symbols-options",
+        "scanner.tradingview.com/options/scan?label-product=symbols-options",
+        "scanner.tradingview.com/global/screener?label-product=symbols-options",
+        "scanner.tradingview.com/options/screener?label-product=symbols-options",
+        "scanner.tradingview.com/global/scan3?label-product=symbols-options",
+        "scanner.tradingview.com/options/scan3?label-product=symbols-options",
     ]
+
+    # Fallback: any scanner.tradingview.com response with option-related data
+    _OPTIONS_SCAN_FALLBACK = "scanner.tradingview.com"
 
     async def fetch_options_chain(self, full_symbol: str) -> str:
         """Fetch options chain by intercepting TradingView scanner API responses.
@@ -1260,12 +1272,28 @@ class TradingViewFetcher:
         page = await context.new_page()
 
         captured_responses: list[dict] = []
+        missed_scanner_urls: list[str] = []
 
         async def _on_response(response):
             resp_url = response.url
             if not response.ok:
                 return
-            if not any(ep in resp_url for ep in self._OPTIONS_SCAN_URLS):
+
+            # Primary: match known scan/screener URLs
+            is_known = any(ep in resp_url for ep in self._OPTIONS_SCAN_URLS)
+
+            # Fallback: any scanner.tradingview.com response that looks like
+            # option chain data (has symbols array with option fields)
+            is_fallback = (
+                not is_known
+                and self._OPTIONS_SCAN_FALLBACK in resp_url
+                and "symbols-options" in resp_url
+            )
+
+            if not is_known and not is_fallback:
+                # Log scanner URLs we're NOT matching for diagnostics
+                if self._OPTIONS_SCAN_FALLBACK in resp_url:
+                    missed_scanner_urls.append(resp_url)
                 return
 
             try:
@@ -1278,8 +1306,17 @@ class TradingViewFetcher:
                 parsed = json.loads(body)
                 if parsed.get("totalCount", 0) <= 1:
                     return
+                # Extra validation for fallback matches: must have symbols/data array
+                if is_fallback and not (parsed.get("symbols") or parsed.get("data")):
+                    return
             except (json.JSONDecodeError, ValueError):
                 pass
+
+            if is_fallback:
+                logger.info(
+                    "Options chain: matched via FALLBACK URL pattern: %s",
+                    resp_url[:200],
+                )
 
             captured_responses.append({
                 "url": resp_url,
@@ -1330,6 +1367,13 @@ class TradingViewFetcher:
                     # Pretty-print JSON when possible
                     try:
                         parsed = json.loads(resp["body"])
+                        # Log field names for diagnostics
+                        fields = parsed.get("fields", [])
+                        if fields:
+                            logger.info(
+                                "Options chain response %d/%d for %s: fields=%s",
+                                idx, len(captured_responses), full_symbol, fields,
+                            )
                         parts.append(json.dumps(parsed, indent=2))
                     except (json.JSONDecodeError, ValueError):
                         parts.append(resp["body"])
@@ -1345,6 +1389,13 @@ class TradingViewFetcher:
             # -------------------------------------------------------
             # Fallback: DOM innerText (old approach)
             # -------------------------------------------------------
+            if missed_scanner_urls:
+                logger.error(
+                    "Options chain INTERCEPT MISS for %s: scanner.tradingview.com "
+                    "requests detected but not matched by _OPTIONS_SCAN_URLS. "
+                    "URLs seen: %s — UPDATE _OPTIONS_SCAN_URLS to match these!",
+                    full_symbol, missed_scanner_urls[:5],
+                )
             logger.warning(
                 "No API responses captured for %s; falling back to DOM text",
                 full_symbol,

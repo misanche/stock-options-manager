@@ -67,7 +67,7 @@ class TestParseValidJson:
 
     def test_call_field_values(self):
         result = parse_options_chain(SAMPLE_RAW, symbol="MSFT")
-        call = result["calls"]["20260427"][0]
+        call = result["calls"]["20260427"]["475.0"]
         assert call["opra_symbol"] == "OPRA:MSFT260427C475.0"
         assert call["strike"] == 475
         assert call["bid"] == 0.22
@@ -84,7 +84,7 @@ class TestParseValidJson:
 
     def test_put_field_values(self):
         result = parse_options_chain(SAMPLE_RAW, symbol="MSFT")
-        put = result["puts"]["20260508"][0]
+        put = result["puts"]["20260508"]["555.0"]
         assert put["opra_symbol"] == "OPRA:MSFT260508P555.0"
         assert put["strike"] == 555
         assert put["bid"] == 130.2
@@ -171,8 +171,8 @@ def test_sorting_by_strike():
         "symbols": [_make_call(500), _make_call(400), _make_call(450)],
     })
     result = parse_options_chain(raw, symbol="TEST")
-    strikes = [c["strike"] for c in result["calls"]["20260427"]]
-    assert strikes == [400, 450, 500]
+    strikes = list(result["calls"]["20260427"].keys())
+    assert strikes == ["400.0", "450.0", "500.0"]
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ def test_parse_with_data_key():
     })
     result = parse_options_chain(raw, symbol="ABC")
     assert "20260427" in result["calls"]
-    assert result["calls"]["20260427"][0]["strike"] == 100
+    assert result["calls"]["20260427"]["100.0"]["strike"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ def test_field_mapping_accuracy():
     ]
     raw = json.dumps({"symbols": [{"s": "OPRA:ZZZ260601C300.0", "f": fields}]})
     result = parse_options_chain(raw, symbol="ZZZ")
-    opt = result["calls"]["20260601"][0]
+    opt = result["calls"]["20260601"]["300.0"]
 
     assert opt["ask"] == 10.0,   "f[0] → ask"
     assert opt["bid"] == 9.0,    "f[1] → bid"

@@ -92,10 +92,34 @@ class AgentRunner:
             if current_strike is not None:
                 structured = filter_options_chain_for_position(structured, current_strike, option_type)
             structured = filter_options_chain_by_delta(structured)
+
+            # Sanity check: warn if contracts have null bid values
+            null_bid_count = 0
+            total_count = 0
+            for side in ("calls", "puts"):
+                for _exp, strikes in structured.get(side, {}).items():
+                    for _sk, contract in strikes.items():
+                        total_count += 1
+                        if contract.get("bid") is None:
+                            null_bid_count += 1
+            if null_bid_count > 0:
+                logger.warning(
+                    "Options chain for %s: %d/%d contracts have NULL bid — "
+                    "agents will be unable to calculate premium. "
+                    "Likely cause: TradingView API field name change.",
+                    symbol, null_bid_count, total_count,
+                )
+
             return (
                 OPTIONS_CHAIN_SCHEMA_DESCRIPTION + "\n"
                 + json.dumps(structured, indent=2)
             )
+        logger.warning(
+            "Options chain for %s: parser returned empty calls/puts — "
+            "falling back to raw text (%d chars). "
+            "Check if TradingView scan URL matching is working.",
+            symbol, len(raw_chain),
+        )
         return raw_chain
 
     @staticmethod

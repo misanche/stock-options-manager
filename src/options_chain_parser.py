@@ -79,7 +79,9 @@ DATA INTEGRITY (MANDATORY):
   read the bid/ask from a different expiration's entry for the same strike.
 """
 
-# Canonical field names we expose on each contract
+# Canonical field names we expose on each contract.
+# Keys are lowercased API field names → canonical names.
+# Extra aliases handle possible TradingView endpoint migrations.
 _FIELD_MAP = {
     "ask": "ask",
     "bid": "bid",
@@ -89,15 +91,28 @@ _FIELD_MAP = {
     "gamma": "gamma",
     "iv": "iv",
     "option-type": "option_type",
+    "option_type": "option_type",
     "pricescale": "pricescale",
     "rho": "rho",
     "root": "root",
     "strike": "strike",
     "theoprice": "mid",  # theoPrice → mid
+    "theo_price": "mid",
+    "midprice": "mid",
+    "mid": "mid",
     "theta": "theta",
     "vega": "vega",
     "bid_iv": "bid_iv",
     "ask_iv": "ask_iv",
+    # Common alternative field names from various TradingView API versions
+    "option_bid": "bid",
+    "option_ask": "ask",
+    "option-bid": "bid",
+    "option-ask": "ask",
+    "bid_price": "bid",
+    "ask_price": "ask",
+    "implied_volatility": "iv",
+    "implied-volatility": "iv",
 }
 
 
@@ -153,9 +168,28 @@ def parse_options_chain(raw: str, symbol: str = "") -> dict:
         fields_arr = parsed.get("fields", [])
         if fields_arr:
             idx_map = {}
+            unmapped_fields = []
             for i, name in enumerate(fields_arr):
-                canon = _FIELD_MAP.get(name.lower(), name.lower().replace("-", "_"))
+                lowered = name.lower()
+                canon = _FIELD_MAP.get(lowered, lowered.replace("-", "_"))
                 idx_map[canon] = i
+                if lowered not in _FIELD_MAP:
+                    unmapped_fields.append(name)
+            # Log unmapped fields — critical for debugging field name changes
+            if unmapped_fields:
+                logger.info(
+                    "options_chain_parser: unmapped fields from API: %s "
+                    "(mapped fields: %s)",
+                    unmapped_fields, [f for f in fields_arr if f.lower() in _FIELD_MAP],
+                )
+            # Warn if critical price fields are missing
+            if "bid" not in idx_map or "ask" not in idx_map:
+                logger.error(
+                    "options_chain_parser: CRITICAL — 'bid' and/or 'ask' not found "
+                    "in field mapping! API fields: %s → mapped: %s. "
+                    "Premium extraction WILL FAIL.",
+                    fields_arr, dict(idx_map),
+                )
         else:
             # Fallback to hardcoded positions (legacy)
             idx_map = {
