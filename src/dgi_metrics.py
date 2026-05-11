@@ -292,22 +292,20 @@ def _consistency_score(years_consecutive: int) -> float:
     return _clamp((years_consecutive - 3) / 22 * 100)
 
 
-def _compute_minimum_thresholds() -> Dict[str, float]:
-    """Compute 'ideal minimum' sub-scores from slightly above DEFAULT_FILTERS.
+def _compute_threshold_line(target: float) -> Dict[str, float]:
+    """Return uniform sub-scores so the weighted total equals *target*.
 
-    DEFAULT_FILTERS sit at the zero-point of each scoring function (all map
-    to score 0).  We use moderately higher raw values that represent
-    a sensible floor for a decent DGI holding.
+    Each sub-score is set to *target* (clamped to [floor, 100]).  The floor
+    for every dimension is 0 because DEFAULT_FILTERS map to score 0 in each
+    scoring function.  With all sub-scores equal and weights summing to 1.0,
+    the weighted total equals the sub-score value.
     """
-    return {
-        "dividend_yield": round(_dividend_yield_score(0.025), 1),       # 2.5% yield
-        "dividend_growth": round(_dividend_growth_score(0.05), 1),      # 5% CAGR
-        "payout_safety": round(_payout_safety_score(0.60), 1),          # 60% payout
-        "valuation": round(_valuation_score(25), 1),                    # PE 25
-        "financial_health": round(_financial_health_score(1.5, 0.10), 1),  # D/E 1.5, ROE 10%
-        "consistency": round(_consistency_score(8), 1),                 # 8 years
-        "technical_timing": 40.0,                                       # reasonable baseline
-    }
+    keys = [
+        "dividend_yield", "dividend_growth", "payout_safety",
+        "valuation", "financial_health", "consistency", "technical_timing",
+    ]
+    value = round(min(max(target, 0), 100), 1)
+    return {k: value for k in keys}
 
 
 # ======================================================================
@@ -405,7 +403,8 @@ def calculate_quality_score_detailed(
             "debt_to_equity_score": round(de_score, 1),
             "roe_score": round(roe_score, 1),
         },
-        "minimum_thresholds": _compute_minimum_thresholds(),
+        "minimum_thresholds": _compute_threshold_line(65),
+        "ideal_thresholds": _compute_threshold_line(80),
     }
 
 

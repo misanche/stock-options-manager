@@ -9,6 +9,15 @@
 
 ## Learnings
 
+### StockAnalysis.com Dividend Data Integration (2026-05)
+- Created `src/stockanalysis_fetcher.py` — scrapes dividend summary widget from stockanalysis.com for authoritative Growth Years and supplementary metrics.
+- `fetch_dividend_data(symbol)` returns dict with 8 fields (yield, annual dividend, payout ratio, growth, growth_years, frequency, buyback yield, shareholder yield) or `None` on error.
+- Integrated into both `analyze_single_symbol()` and `run_dgi_screener()` in `src/dgi_screener.py` via shared `_apply_stockanalysis_overrides()` helper.
+- Priority rule: `years_consecutive_increases` ALWAYS uses SA's `growth_years` when available (Yahoo calculation from dividend series is unreliable). Other metrics (yield, payout ratio, CAGR) only fall back to SA when Yahoo returns 0/missing.
+- Uses in-memory dict cache (`_cache`) to avoid redundant HTTP requests within a single screener run.
+- 0.5s delay between SA requests in batch mode to be polite; User-Agent rotation mirrors `tv_data_fetcher.py` pattern.
+- Dual parsing strategy: first tries structured DOM traversal (label/value siblings), then falls back to regex on raw HTML for resilience against page structure changes.
+
 ### Contrarian Agent Instructions (2026-07)
 - Created `src/tv_contrarian_instructions.py` implementing Danny's Opción D architecture (decision `danny-contrarian-agent-architecture.md`).
 - Function `get_contrarian_instructions(agent_type, decision_type)` returns a customized system prompt. Covers 4 agent types × their valid decisions = 16 combinations total.
@@ -1620,3 +1629,18 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - The button sets all 5 sliders (QS≥80, DY≥2.5%, DG≥10%, Years≥10, Timing≥90) and calls `applyFilters()`.
 - Key data formats in DGI screener: `dividend_yield` stored as percentage number (2.5 = 2.5%), `dividend_cagr_5y` stored as decimal (0.10 = 10%), sliders use integer values with DY divided by 10.
 - Pattern: preset buttons reuse `applyFilters()` by setting slider values programmatically — no need for separate filter logic.
+
+### Radar Chart "Ideal Minimum" Threshold Line (2026-05)
+- Added `_compute_minimum_thresholds()` helper in `src/dgi_metrics.py` that returns a dict of 7 sub-score thresholds representing a "decent DGI holding" floor.
+- DEFAULT_FILTERS all map to score 0 by design (they ARE the zero-points of each scoring function). Used slightly higher raw values for meaningful visualization: yield 2.5%, growth 5%, payout 60%, PE 25, D/E 1.5 + ROE 10%, 8 years, tech 40.
+- Resulting threshold scores: ~22–40 range, forming a visible polygon on the radar.
+- Added `"minimum_thresholds"` key to `calculate_quality_score_detailed()` return dict.
+- Frontend: second dataset on radar chart (thin red dashed line, `borderDash: [6,4]`, `borderWidth: 1.5`). Legend re-enabled so user can distinguish the two lines.
+- Key files: `src/dgi_metrics.py` (backend), `web/templates/dgi_analysis.html` (frontend Chart.js config).
+
+### Dual Threshold Lines on Radar Chart (2026-05)
+- Replaced hardcoded `_compute_minimum_thresholds()` with generic `_compute_threshold_line(target)` that returns uniform sub-scores at `target` for all 7 dimensions.
+- Uniform approach: since weights sum to 1.0, setting all sub-scores = N yields weighted total = N. Simple, intuitive, no per-dimension guesswork.
+- `calculate_quality_score_detailed()` now returns both `"minimum_thresholds"` (target=65) and `"ideal_thresholds"` (target=80).
+- Frontend radar chart now shows 3 datasets: stock scores (blue filled), Mínimo 65 (red dashed), Ideal 80 (green dashed).
+- Green line uses `rgba(34, 197, 94, 0.85)` matching Tailwind green-500.
