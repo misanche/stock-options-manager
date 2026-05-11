@@ -216,8 +216,10 @@
 <script>
 (function() {
     var sub = {{ result.quality_detail.sub_scores | tojson }};
+    var thresholds = {{ result.quality_detail.minimum_thresholds | tojson }};
     var labels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency', 'Tech Timing'];
     var data = [sub.dividend_yield, sub.dividend_growth, sub.payout_safety, sub.valuation, sub.financial_health, sub.consistency, sub.technical_timing];
+    var thresholdData = [thresholds.dividend_yield, thresholds.dividend_growth, thresholds.payout_safety, thresholds.valuation, thresholds.financial_health, thresholds.consistency, thresholds.technical_timing];
 
     var ctx = document.getElementById('radarChart').getContext('2d');
     new Chart(ctx, {
@@ -235,6 +237,16 @@
                 pointHoverBackgroundColor: '#fff',
                 pointHoverBorderColor: 'rgba(59, 130, 246, 1)',
                 borderWidth: 2,
+            }, {
+                label: 'Ideal Minimum',
+                data: thresholdData,
+                fill: false,
+                borderColor: 'rgba(239, 68, 68, 0.85)',
+                borderWidth: 1.5,
+                borderDash: [6, 4],
+                pointRadius: 2,
+                pointBackgroundColor: 'rgba(239, 68, 68, 0.85)',
+                pointBorderColor: 'rgba(239, 68, 68, 0.85)',
             }]
         },
         options: {
@@ -250,7 +262,10 @@
                 }
             },
             plugins: {
-                legend: { display: false },
+                legend: {
+                    display: true,
+                    labels: { color: '#ccc', boxWidth: 14, font: { size: 11 } },
+                },
             }
         }
     });

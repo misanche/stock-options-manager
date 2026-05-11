@@ -1327,3 +1327,107 @@ Decision Summary tables in chat agent responses (covered calls, cash-secured put
 - Displaying tabular data (options chains, dividend history)
 - Fixed-width layout is available (reports, full-page views)
 - Keep columns narrow; avoid `<br>` in cells (use multiple rows instead)
+
+---
+
+## DGI Enhancements (2026-05-11)
+
+### Radar "Ideal Minimum" Thresholds Use Above-Filter Values
+**Date:** 2026-05-11  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented
+
+DEFAULT_FILTERS in dgi_metrics.py sit at the exact zero-point of each scoring function (all map to sub-score 0). Plotting them on the radar would show a collapsed dot at center — useless visually.
+
+**Decision:** The "Ideal Minimum" red line uses moderately higher raw values representing a "decent DGI holding" floor rather than bare elimination cutoff:
+- Yield 2.5% (score 22), Growth 5% CAGR (score 33), Payout ≤60% (score 30), PE ≤25 (score 25), D/E ≤1.5 + ROE ≥10% (score 29), Years ≥8 (score 23), Tech 40
+
+**Implications:**
+- If DEFAULT_FILTERS change, `_compute_minimum_thresholds()` may need updating — they're currently independent.
+- The threshold is computed fresh each call (trivial cost) rather than cached.
+- Legend is now displayed on the radar chart to distinguish the two datasets.
+
+**Files Changed:** `src/dgi_metrics.py`, `web/templates/dgi_analysis.html`
+
+---
+
+### Beasts Filter Preset
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-11  
+**Status:** ✅ Implemented
+
+User requested a "Beasts" preset filter button on the DGI screener page to quickly surface elite dividend stocks.
+
+**Decision:** Added a `🐂 Beasts` button in `web/templates/dgi_screener.html` that sets filter thresholds: Quality Score ≥ 80, Dividend Yield ≥ 2.5%, Dividend Growth ≥ 10%, Years ≥ 10, Timing ≥ 90. The button reuses the existing `applyFilters()` function by programmatically setting slider values — no duplicate filter logic.
+
+**Rationale:**
+- Reusing sliders + `applyFilters()` keeps one source of truth for filtering logic.
+- Users can see and adjust the preset values after clicking since sliders visually update.
+- "Over X" interpreted as ≥ X for practical UI purposes.
+
+**Files Changed:** `web/templates/dgi_screener.html`
+
+---
+
+### DGI Single-Symbol Analysis Page
+**Date:** 2026-05-11  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented  
+**Impact:** Frontend, API, scoring logic
+
+Added a read-only DGI analysis page (`/dgi/analyze/{symbol}`) that lets users score any ticker — not just symbols in the S&P 500 screener universe.
+
+**Key Design Choices:**
+1. **New `analyze_single_symbol()` function** in `dgi_screener.py` rather than reusing `run_dgi_screener()` — avoids CosmosDB writes, config dependencies, and batch overhead. Single-symbol path fetches one ticker and returns immediately.
+2. **New `calculate_quality_score_detailed()`** in `dgi_metrics.py` instead of modifying existing `calculate_quality_score()` — the detailed variant returns all sub-scores, weights, and health breakdowns. Original function untouched for backward compatibility.
+3. **Executor thread for blocking I/O** — `yfinance` is synchronous, so the endpoint uses `run_in_executor()` to avoid blocking the FastAPI event loop.
+4. **No CosmosDB dependency** — the analysis endpoint doesn't require CosmosDB at all. It fetches live data from yfinance and computes scores on the fly.
+
+**Files Changed:** `src/dgi_metrics.py`, `src/dgi_screener.py`, `web/app.py`, `web/templates/dgi_screener.html`, `web/templates/dgi_analysis.html`
+
+---
+
+### DGI Score History Tracking
+**Date:** 2026-05-11  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented  
+**Impact:** Data model (CosmosDB `dgi_top20` documents), Frontend (detail modal)
+
+When stocks persist in the DGI screener top_n across multiple runs, their quality_score may change as market conditions evolve.
+
+**Decision:** Added a `score_history` array field to each `dgi_top20` document in CosmosDB:
+- Format: `[{"date": "YYYY-MM-DD", "score": float}, ...]`
+- Capped at 90 entries (matches the daily snapshot TTL)
+- Deduplication: same day + same score → skip; same day + different score → replace last entry
+- New stocks initialize with a single entry
+
+**Implications for Team:**
+- **Rusty (Framework):** No changes needed — the field is just another document property flowing through existing upsert/read paths.
+- **Danny (Lead):** The 90-entry cap keeps document size bounded. If we later want longer history, consider moving to the snapshot collection instead.
+- **Frontend:** Chart.js CDN added to `dgi_screener.html` (not base.html) — only loaded on the DGI page. If other pages need charts, consider moving to base.html.
+
+**Files Changed:** `src/dgi_metrics.py`, `web/app.py`
+
+---
+
+### StockAnalysis.com as Supplementary Dividend Data Source
+**Date:** 2026-05-11  
+**Author:** Linus (Quant Dev)  
+**Status:** ✅ Implemented  
+**Impact:** DGI screener pipeline (both single-symbol and batch modes)
+
+Yahoo Finance's dividend payment series produces unreliable `years_consecutive_increases` counts. StockAnalysis.com publishes an authoritative "Growth Years" metric on each stock's dividend page that matches established dividend aristocrat/champion databases.
+
+**Decision:**
+- **Growth Years**: ALWAYS prefer stockanalysis.com over Yahoo-calculated value. Fall back to Yahoo only when SA returns `None`.
+- **Other metrics** (yield, payout ratio, CAGR): use SA as fallback only when Yahoo returns 0 or missing. Yahoo remains the primary source for these.
+- `dgi_metrics.py` is NOT modified — the override happens at the integration level in `dgi_screener.py`.
+
+**Risks:**
+- Web scraping is fragile — SA may change page structure, block requests, or rate-limit.
+- Mitigations: dual parsing strategy (DOM + regex fallback), `None` return on any error, in-memory cache, polite delays, User-Agent rotation.
+- If SA is completely unreachable, the screener falls back silently to Yahoo-only behavior with no disruption.
+
+**Files Changed:** `src/dgi_screener.py`
+
+---
