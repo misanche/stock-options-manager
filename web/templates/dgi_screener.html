@@ -439,6 +439,9 @@
         if (entry.technicals) html += buildSection('Technical Timing', entry.technicals);
         modalBody.innerHTML = html;
 
+        // Show modal BEFORE chart creation so canvas has dimensions
+        modal.style.display = 'flex';
+
         // Radar chart — Score Contribution
         var radarCanvas = document.getElementById('dgiRadarChart');
         var radarContainer = document.getElementById('dgiRadarChartContainer');
@@ -565,8 +568,6 @@
             chartCanvas.style.display = 'none';
             chartEmpty.style.display = 'block';
         }
-
-        modal.style.display = 'flex';
     }
 
     function closeDetail() { modal.style.display = 'none'; }
