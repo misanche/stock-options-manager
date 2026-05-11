@@ -137,6 +137,12 @@
             <button class="modal-close" id="dgiDetailClose">&times;</button>
         </div>
         <div id="dgiDetailBody"></div>
+        <div id="dgiRadarChartContainer" style="margin:1rem 1.25rem 0;">
+            <h4 style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">Score Contribution</h4>
+            <div style="background:var(--bg-input);border-radius:var(--radius);padding:0.75rem 1rem;max-width:500px;margin:0 auto;">
+                <canvas id="dgiRadarChart" height="300"></canvas>
+            </div>
+        </div>
         <div id="dgiScoreChartContainer" style="margin:1rem 1.25rem 1.25rem;">
             <h4 style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">Score Evolution</h4>
             <div id="dgiScoreChartWrap" style="background:var(--bg-input);border-radius:var(--radius);padding:0.75rem 1rem;">
@@ -159,6 +165,7 @@
 <script>
 (function() {
     var _scoreChart = null;
+    var _radarChart = null;
 
     /* ── Analyze Symbol Input Toggle ── */
     window.showSymbolInput = function() {
@@ -431,6 +438,81 @@
         if (entry.metrics) html += buildSection('Fundamentals', entry.metrics);
         if (entry.technicals) html += buildSection('Technical Timing', entry.technicals);
         modalBody.innerHTML = html;
+
+        // Radar chart — Score Contribution
+        var radarCanvas = document.getElementById('dgiRadarChart');
+        var radarContainer = document.getElementById('dgiRadarChartContainer');
+        if (_radarChart) { _radarChart.destroy(); _radarChart = null; }
+
+        var qd = entry.quality_detail;
+        if (qd && qd.sub_scores) {
+            radarContainer.style.display = '';
+            var radarLabels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency', 'Tech Timing'];
+            var radarKeys = ['dividend_yield', 'dividend_growth', 'payout_safety', 'valuation', 'financial_health', 'consistency', 'technical_timing'];
+            var radarData = radarKeys.map(function(k) { return qd.sub_scores[k] || 0; });
+            var radarMin = radarKeys.map(function(k) { return (qd.minimum_thresholds && qd.minimum_thresholds[k]) || 65; });
+            var radarIdeal = radarKeys.map(function(k) { return (qd.ideal_thresholds && qd.ideal_thresholds[k]) || 80; });
+
+            _radarChart = new Chart(radarCanvas.getContext('2d'), {
+                type: 'radar',
+                data: {
+                    labels: radarLabels,
+                    datasets: [{
+                        label: entry.symbol,
+                        data: radarData,
+                        fill: true,
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        borderColor: 'rgba(59, 130, 246, 0.8)',
+                        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 2
+                    }, {
+                        label: 'Mínimo (65)',
+                        data: radarMin,
+                        fill: false,
+                        borderColor: 'rgba(239, 68, 68, 0.85)',
+                        borderWidth: 1.5,
+                        borderDash: [6, 4],
+                        pointRadius: 2,
+                        pointBackgroundColor: 'rgba(239, 68, 68, 0.85)',
+                        pointBorderColor: 'rgba(239, 68, 68, 0.85)'
+                    }, {
+                        label: 'Ideal (80)',
+                        data: radarIdeal,
+                        fill: false,
+                        borderColor: 'rgba(34, 197, 94, 0.85)',
+                        borderWidth: 1.5,
+                        borderDash: [6, 4],
+                        pointRadius: 2,
+                        pointBackgroundColor: 'rgba(34, 197, 94, 0.85)',
+                        pointBorderColor: 'rgba(34, 197, 94, 0.85)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { stepSize: 20, color: '#999', backdropColor: 'transparent' },
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            angleLines: { color: 'rgba(255,255,255,0.08)' },
+                            pointLabels: { color: '#ccc', font: { size: 12 } }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#ccc', boxWidth: 14, font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        } else {
+            radarContainer.style.display = 'none';
+        }
 
         // Score evolution chart
         var chartCanvas = document.getElementById('dgiScoreChart');

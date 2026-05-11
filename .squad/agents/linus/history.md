@@ -1644,3 +1644,11 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - `calculate_quality_score_detailed()` now returns both `"minimum_thresholds"` (target=65) and `"ideal_thresholds"` (target=80).
 - Frontend radar chart now shows 3 datasets: stock scores (blue filled), Mínimo 65 (red dashed), Ideal 80 (green dashed).
 - Green line uses `rgba(34, 197, 94, 0.85)` matching Tailwind green-500.
+
+### Radar Chart in DGI Screener Modal (2026-05)
+- Added "Score Contribution" radar chart to the detail modal in `web/templates/dgi_screener.html`.
+- Reuses the same visual style as `dgi_analysis.html`: blue filled area for stock sub_scores, red dashed line for Mínimo thresholds, green dashed for Ideal thresholds.
+- Chart.js was already loaded in the screener template (line 158). No new dependencies needed.
+- Chart instance tracked in `_radarChart` variable; destroyed on each `openDetail()` call to avoid canvas reuse issues.
+- Data source: `entry.quality_detail.sub_scores`, `.minimum_thresholds`, `.ideal_thresholds` — all already serialized in the row's `data-entry` JSON from `dgi_screener.py:179`.
+- Graceful degradation: if `quality_detail` is missing, the radar container is hidden.
