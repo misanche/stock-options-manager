@@ -9,6 +9,14 @@
 
 ## Learnings
 
+### DGI Screener Logging & Silent Exception Fix (2026-05)
+- User reported screener runs visible in web UI but CosmosDB entries NOT being updated — no new `last_updated`, no `quality_detail` field despite commit 2415b47.
+- Root cause investigation: `_run_dgi_screener_in_background()` in `web/app.py` catches all exceptions but logged them WITHOUT `exc_info=True` — full tracebacks were silently lost. Same issue in the CosmosDB upsert error handler in `dgi_screener.py`.
+- Additionally, `upsert_dgi_top()` in `cosmos_db.py` has a silent `if container is None: return` guard that skips all writes with only a warning-level log. If the container ref goes stale, writes silently stop. This is the most likely cause of the missing updates — needs monitoring.
+- Fix: Added `exc_info=True` to both error handlers. Added 5 INFO-level log traces at key pipeline stages: start of each symbol analysis, after quality score + category, before CosmosDB upsert, after successful upsert, and at run completion with total counts.
+- The `quality_detail` fix from commit 2415b47 was verified correct: `calculate_quality_score_detailed()` is properly called, result is included in both candidates list and CosmosDB document.
+- Key pattern: Background thread error handlers MUST include `exc_info=True` — without it, async failures become invisible. Any "container is None" guard should log at ERROR level, not WARNING, when it causes data loss.
+
 ### StockAnalysis.com Dividend Data Integration (2026-05)
 - Created `src/stockanalysis_fetcher.py` — scrapes dividend summary widget from stockanalysis.com for authoritative Growth Years and supplementary metrics.
 - `fetch_dividend_data(symbol)` returns dict with 8 fields (yield, annual dividend, payout ratio, growth, growth_years, frequency, buyback yield, shareholder yield) or `None` on error.
