@@ -56,6 +56,17 @@
                 <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">Timing ≥ <span id="timingVal" style="color:var(--text);font-weight:500;">0</span></label>
                 <input type="range" min="0" max="100" value="0" id="filterTiming" oninput="applyFilters()" class="range-slider">
             </div>
+            <div style="grid-column: span 1;">
+                <label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">💲 Price: <span id="priceMinVal" style="color:var(--text);font-weight:500;">$0</span> – <span id="priceMaxVal" style="color:var(--text);font-weight:500;">$1000</span></label>
+                <div class="dual-range-wrap">
+                    <div class="dual-range-track"></div>
+                    <div class="dual-range-fill" id="priceRangeFill"></div>
+                    <input type="range" min="0" max="1000" value="0" step="5" id="filterPriceMin"
+                           oninput="clampPriceSliders('min'); applyFilters()" class="dual-range-input">
+                    <input type="range" min="0" max="1000" value="1000" step="5" id="filterPriceMax"
+                           oninput="clampPriceSliders('max'); applyFilters()" class="dual-range-input">
+                </div>
+            </div>
         </div>
         <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
             <button onclick="applyBeastsFilter()" class="btn-sm" style="background:linear-gradient(135deg,var(--accent),#e67e22);border:none;color:#fff;padding:0.4rem 0.75rem;border-radius:var(--radius);cursor:pointer;font-weight:600;">🐂 Beasts</button>
@@ -172,12 +183,35 @@
         panel.style.display = isVisible ? 'none' : 'block';
     };
 
+    window.clampPriceSliders = function(changed) {
+        var minEl = document.getElementById('filterPriceMin');
+        var maxEl = document.getElementById('filterPriceMax');
+        var minV = parseInt(minEl.value);
+        var maxV = parseInt(maxEl.value);
+        if (changed === 'min' && minV > maxV) { maxEl.value = minV; }
+        if (changed === 'max' && maxV < minV) { minEl.value = maxV; }
+        updatePriceRangeFill();
+    };
+
+    window.updatePriceRangeFill = function() {
+        var minEl = document.getElementById('filterPriceMin');
+        var maxEl = document.getElementById('filterPriceMax');
+        var fill = document.getElementById('priceRangeFill');
+        var max = parseInt(minEl.max);
+        var leftPct = (parseInt(minEl.value) / max) * 100;
+        var rightPct = (parseInt(maxEl.value) / max) * 100;
+        fill.style.left = leftPct + '%';
+        fill.style.width = (rightPct - leftPct) + '%';
+    };
+
     window.applyFilters = function() {
         var qsVal = parseInt(document.getElementById('filterQS').value);
         var dyVal = parseInt(document.getElementById('filterDY').value);
         var dgVal = parseInt(document.getElementById('filterDG').value);
         var yearsVal = parseInt(document.getElementById('filterYears').value);
         var timingVal = parseInt(document.getElementById('filterTiming').value);
+        var priceMin = parseInt(document.getElementById('filterPriceMin').value);
+        var priceMax = parseInt(document.getElementById('filterPriceMax').value);
 
         // Update displayed values
         document.getElementById('qsVal').textContent = qsVal;
@@ -185,6 +219,8 @@
         document.getElementById('dgVal').textContent = dgVal + '%';
         document.getElementById('yearsVal').textContent = yearsVal;
         document.getElementById('timingVal').textContent = timingVal;
+        document.getElementById('priceMinVal').textContent = '$' + priceMin;
+        document.getElementById('priceMaxVal').textContent = '$' + priceMax;
 
         var rows = document.querySelectorAll('.dgi-row');
         var visibleCount = 0;
@@ -198,14 +234,16 @@
                 var dividendCAGR = (entry.metrics && entry.metrics.dividend_cagr_5y) || 0;
                 var years = (entry.metrics && entry.metrics.years_consecutive_increases) || 0;
                 var timing = (entry.technicals && entry.technicals.score) || 0;
+                var price = (entry.metrics && entry.metrics.current_price) || 0;
 
                 var passQS = qualityScore >= qsVal;
                 var passDY = dividendYield >= (dyVal / 10);
                 var passDG = (dividendCAGR * 100) >= dgVal;
                 var passYears = years >= yearsVal;
                 var passTiming = timing >= timingVal;
+                var passPrice = price >= priceMin && price <= priceMax;
 
-                if (passQS && passDY && passDG && passYears && passTiming) {
+                if (passQS && passDY && passDG && passYears && passTiming && passPrice) {
                     row.style.display = 'table-row';
                     visibleCount++;
                 } else {
@@ -225,6 +263,9 @@
         document.getElementById('filterDG').value = 10;    // 10%
         document.getElementById('filterYears').value = 10;
         document.getElementById('filterTiming').value = 90;
+        document.getElementById('filterPriceMin').value = 0;
+        document.getElementById('filterPriceMax').value = 1000;
+        updatePriceRangeFill();
         applyFilters();
     };
 
@@ -234,6 +275,9 @@
         document.getElementById('filterDG').value = 0;
         document.getElementById('filterYears').value = 0;
         document.getElementById('filterTiming').value = 0;
+        document.getElementById('filterPriceMin').value = 0;
+        document.getElementById('filterPriceMax').value = 1000;
+        updatePriceRangeFill();
         applyFilters();
     };
 
@@ -498,5 +542,8 @@
         });
     });
 })();
+
+    // Initialize price range fill bar
+    if (document.getElementById('priceRangeFill')) { updatePriceRangeFill(); }
 </script>
 {% endblock %}
