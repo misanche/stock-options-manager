@@ -242,6 +242,8 @@ async def run_dgi_screener(config, cosmos) -> dict:
             continue
 
         try:
+            logger.info("DGI: Analyzing %s (%d/%d)", symbol, idx + 1, len(batch_data))
+
             info = item.get("info", {})
             dividends = item.get("dividends")
             history = item.get("history")
@@ -330,6 +332,8 @@ async def run_dgi_screener(config, cosmos) -> dict:
             else:
                 entry_tag = "Wait"
 
+            category_preview = dgi_metrics.categorize_stock(metrics)
+            logger.info("DGI: %s — quality=%.1f, category=%s", symbol, quality, category_preview)
             logger.info("[DGI %s] quality_score=%.2f, tech_timing=%.1f, entry_tag=%s",
                         symbol, quality, tech_timing, entry_tag)
 
@@ -437,14 +441,16 @@ async def run_dgi_screener(config, cosmos) -> dict:
         }
         docs_to_upsert.append(doc)
 
+    logger.info("DGI: Saving %d entries to CosmosDB...", len(docs_to_upsert))
     try:
         cosmos.upsert_dgi_top(docs_to_upsert)
         if dropped_symbols:
             cosmos.delete_dgi_dropped(dropped_symbols)
+        logger.info("DGI: ✅ All %d entries saved to CosmosDB", len(docs_to_upsert))
         logger.info("DGI Screener: wrote %d entries, dropped %d",
                      len(docs_to_upsert), len(dropped_symbols))
     except Exception as e:
-        logger.error("Failed to write DGI results to CosmosDB: %s", e)
+        logger.error("Failed to write DGI results to CosmosDB: %s", e, exc_info=True)
 
     # 10. Write daily snapshot
     avg_days = (
@@ -503,6 +509,8 @@ async def run_dgi_screener(config, cosmos) -> dict:
         ],
     }
 
+    logger.info("DGI: Screener run complete — %d symbols analyzed, %d passed filters",
+                total_screened, len(candidates))
     logger.info(
         "DGI Screener complete: %d screened, %d scored, %d in top list, "
         "%d new, %d dropped",

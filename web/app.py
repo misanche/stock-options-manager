@@ -2250,7 +2250,7 @@ def _run_dgi_screener_in_background(scheduler, state_ref):
     try:
         asyncio.run(run_dgi_screener(scheduler.config, scheduler.cosmos))
     except Exception as e:
-        logger.error("DGI screener trigger error: %s", e)
+        logger.error("DGI screener trigger error: %s", e, exc_info=True)
     finally:
         state_ref["running"] = False
 
