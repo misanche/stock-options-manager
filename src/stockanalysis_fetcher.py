@@ -45,7 +45,7 @@ def _get_headers() -> dict:
         "User-Agent": random.choice(_USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Sec-Fetch-Dest": "document",
@@ -131,51 +131,50 @@ def fetch_dividend_data(symbol: str) -> Optional[dict]:
         soup = BeautifulSoup(resp.text, "html.parser")
         result: dict = {}
 
-        # Strategy: find all key-value pairs in the dividend summary widget.
-        # The page uses a table or grid with label/value pairs. We search
-        # for known labels and grab the adjacent value.
-        # Approach 1: look for <td>/<th> or <span> elements with known labels.
-        for element in soup.find_all(["td", "th", "span", "div"]):
-            text = element.get_text(strip=True).lower()
+        # Strategy 1 — DOM: The page uses <div>Label <div class="...">Value</div></div>.
+        # The label is direct text of a parent div; the value is in a child div.
+        for element in soup.find_all("div"):
+            # Get only the element's own direct text (not children's text)
+            direct_text = element.find(string=True, recursive=False)
+            if not direct_text:
+                continue
+            text = direct_text.strip().lower()
             for label, (key, parser) in _FIELD_MAP.items():
                 if key in result:
                     continue
-                if label in text and text.replace(label, "").strip() in ("", ":"):
-                    # The value is in the next sibling element
-                    value_el = element.find_next_sibling()
-                    if value_el is None:
-                        # Try parent's next sibling (common in grid layouts)
-                        parent = element.parent
-                        if parent:
-                            value_el = parent.find_next_sibling()
-                            if value_el:
-                                value_el = value_el.find(["td", "span", "div"]) or value_el
+                if label == text or text.startswith(label):
+                    # Value is in the first child <div>
+                    value_el = element.find("div")
                     if value_el:
                         raw = value_el.get_text(strip=True)
                         parsed = parser(raw)
                         if parsed is not None:
                             result[key] = parsed
 
-        # Approach 2: regex scan the full HTML for data patterns as fallback
-        if "growth_years" not in result:
-            m = re.search(r"Growth\s+Years[^<]*?<[^>]*>\s*(\d+)", resp.text, re.IGNORECASE)
-            if m:
-                result["growth_years"] = int(m.group(1))
-
-        if "dividend_yield" not in result:
-            m = re.search(r"Dividend\s+Yield[^<]*?<[^>]*>\s*([\d.]+)%", resp.text, re.IGNORECASE)
-            if m:
-                result["dividend_yield"] = float(m.group(1)) / 100.0
-
-        if "payout_ratio" not in result:
-            m = re.search(r"Payout\s+Ratio[^<]*?<[^>]*>\s*([\d.]+)%", resp.text, re.IGNORECASE)
-            if m:
-                result["payout_ratio"] = float(m.group(1)) / 100.0
-
-        if "dividend_growth" not in result:
-            m = re.search(r"Dividend\s+Growth[^<]*?<[^>]*>\s*(-?[\d.]+)%", resp.text, re.IGNORECASE)
-            if m:
-                result["dividend_growth"] = float(m.group(1)) / 100.0
+        # Strategy 2 — Regex: scan the raw HTML for label→value patterns.
+        # Handles cases where tags (e.g. <span>(1Y)</span>) appear between
+        # label text and the value <div>.
+        _REGEX_FIELDS = [
+            ("growth_years", r"Growth\s+Years(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*(\d+)",
+             lambda m: int(m.group(1))),
+            ("dividend_yield", r"Dividend\s+Yield(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*([\d.]+)%",
+             lambda m: float(m.group(1)) / 100.0),
+            ("payout_ratio", r"Payout\s+Ratio(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*([\d.]+)%",
+             lambda m: float(m.group(1)) / 100.0),
+            ("dividend_growth", r"Dividend\s+Growth(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*(-?[\d.]+)%",
+             lambda m: float(m.group(1)) / 100.0),
+            ("annual_dividend", r"Annual\s+Dividend(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*\$?([\d.]+)",
+             lambda m: float(m.group(1))),
+            ("buyback_yield", r"Buyback\s+Yield(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*(-?[\d.]+)%",
+             lambda m: float(m.group(1)) / 100.0),
+            ("shareholder_yield", r"Shareholder\s+Yield(?:<[^>]*>[^<]*</[^>]*>)*\s*<[^>]*>\s*(-?[\d.]+)%",
+             lambda m: float(m.group(1)) / 100.0),
+        ]
+        for key, pattern, converter in _REGEX_FIELDS:
+            if key not in result:
+                m = re.search(pattern, resp.text, re.IGNORECASE)
+                if m:
+                    result[key] = converter(m)
 
         if not result:
             logger.warning("[SA] No dividend data parsed for %s from %s", symbol, url)
