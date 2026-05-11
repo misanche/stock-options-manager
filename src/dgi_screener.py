@@ -312,9 +312,10 @@ async def run_dgi_screener(config, cosmos) -> dict:
                     "score": tech_score
                 }
 
-            quality = dgi_metrics.calculate_quality_score(
+            quality_detail = dgi_metrics.calculate_quality_score_detailed(
                 metrics, technicals
             )
+            quality = quality_detail["total"]
 
             # Entry timing tag based on technical score
             tech_timing = technicals.get("score", 0)
@@ -337,6 +338,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 "metrics": metrics,
                 "technicals": technicals,
                 "quality_score": round(quality, 2),
+                "quality_detail": quality_detail,
                 "entry_tag": entry_tag,
             })
 
@@ -428,6 +430,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
             "last_updated": run_date,
             "metrics": entry["metrics"],
             "technicals": entry["technicals"],
+            "quality_detail": entry.get("quality_detail", {}),
             "score_history": entry.get("score_history", []),
             "sector": entry["metrics"].get("sector", ""),
             "exchange": entry["metrics"].get("exchange", ""),
