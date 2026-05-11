@@ -553,7 +553,7 @@ Stocks must pass all filters before scoring:
 
 ### Data Source
 
-The DGI Screener uses **yfinance** for all data fetching — this is independent of TradingView and does not use the TradingView cache layer. Stock fundamentals, dividend history, and technical indicators are all sourced from Yahoo Finance via the `yfinance` Python package.
+The DGI Screener uses **yfinance** as its primary data source — this is independent of TradingView and does not use the TradingView cache layer. Stock fundamentals, dividend history, and technical indicators are sourced from Yahoo Finance via the `yfinance` Python package. Additionally, **stockanalysis.com** is scraped as a supplementary data source via `requests` + `BeautifulSoup` (`stockanalysis_fetcher.py`). The primary value-add is the authoritative **Growth Years** (consecutive years of dividend increases), which is always preferred over Yahoo's calculated value. Other dividend metrics (yield, payout ratio, dividend growth CAGR) are used as fallback when Yahoo Finance returns zero or missing data. An in-memory cache avoids redundant requests within the same screener run.
 
 ### Storage
 
@@ -620,18 +620,19 @@ Each row has per-symbol actions:
 
 ### How It Works
 
-The DGI Screener runs a 10-step pipeline:
+The DGI Screener runs an 11-step pipeline:
 
 1. **Load symbols** from `config.yaml` (or Settings override)
 2. **Fetch yfinance data** — fundamentals, dividend history, technicals for each symbol
-3. **Calculate fundamental metrics** — yield, growth CAGR, payout ratio, P/E, D/E, years of growth
-4. **Calculate technical metrics** — RSI, SMA crossovers, 52-week low proximity
-5. **Apply minimum filters** — exclude stocks that fail any filter threshold
-6. **Calculate quality scores** — weighted composite of all factors
-7. **Select Top N** — rank by score, keep top 20 (configurable)
-8. **Categorize** — assign category based on metrics (Aristocrat, Rising Star, etc.)
-9. **Update days_on_list** — persist consecutive appearance count across runs
-10. **Write to CosmosDB** — upsert `dgi_top` documents + append `dgi_snapshot` for the day
+3. **Supplement with stockanalysis.com** — scrape authoritative Growth Years + fallback dividend metrics
+4. **Calculate fundamental metrics** — yield, growth CAGR, payout ratio, P/E, D/E, years of growth
+5. **Calculate technical metrics** — RSI, SMA crossovers, 52-week low proximity
+6. **Apply minimum filters** — exclude stocks that fail any filter threshold
+7. **Calculate quality scores** — weighted composite of all factors
+8. **Select Top N** — rank by score, keep top N (configurable)
+9. **Categorize** — assign category based on metrics (Aristocrat, Rising Star, etc.)
+10. **Update days_on_list** — persist consecutive appearance count across runs
+11. **Write to CosmosDB** — upsert `dgi_top` documents + append `dgi_snapshot` for the day
 
 ## Project Structure
 
@@ -664,9 +665,10 @@ stock-options-manager/
 │   ├── tv_report_instructions.py         # Report agent system prompt
 │   ├── tv_supervisor_instructions.py      # Supervisor agent (quality auditor) — 9 playbooks, 4 agent contexts
 │   ├── tv_alpha_instructions.py           # Alpha Advisor agent (aggressive perspective) — 9 playbooks, 4 agent contexts
-│   ├── dgi_screener.py                    # DGI Screener — 10-step pipeline for dividend growth stock screening
+│   ├── dgi_screener.py                    # DGI Screener — 11-step pipeline for dividend growth stock screening
 │   ├── dgi_metrics.py                     # DGI fundamental + technical metric calculations
 │   ├── yfinance_fetcher.py                # Yahoo Finance data fetcher for DGI Screener (independent of TradingView)
+│   ├── stockanalysis_fetcher.py           # StockAnalysis.com scraper — authoritative Growth Years + dividend fallback
 │   └── telegram_notifier.py              # Telegram notification service — sends alerts via bot API
 ├── scripts/
 │   └── provision_cosmosdb.sh             # Azure CosmosDB provisioning via az CLI
@@ -734,8 +736,8 @@ playwright install chromium  # Only needed for options chain fetching
 
 This installs:
 - `agent-framework[foundry]` - Microsoft Agent Framework with Foundry support
-- `beautifulsoup4` - HTML parsing for TradingView overview and dividend data
-- `requests` - HTTP client for TradingView scanner API (overview, technicals, forecast, dividends)
+- `beautifulsoup4` - HTML parsing for TradingView overview data and stockanalysis.com dividend scraping
+- `requests` - HTTP client for TradingView scanner API and stockanalysis.com
 - `playwright` - Headless Chromium for options chain fetching only (requires browser authentication)
 - `yfinance` - Yahoo Finance data fetcher for DGI Screener (independent of TradingView)
 - `numpy`, `pandas` - Numerical computation and data manipulation for DGI scoring pipeline
