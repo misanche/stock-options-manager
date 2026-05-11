@@ -293,19 +293,28 @@ def _consistency_score(years_consecutive: int) -> float:
 
 
 def _compute_threshold_line(target: float) -> Dict[str, float]:
-    """Return uniform sub-scores so the weighted total equals *target*.
+    """Return weight-biased sub-scores whose weighted total equals *target*.
 
-    Each sub-score is set to *target* (clamped to [floor, 100]).  The floor
-    for every dimension is 0 because DEFAULT_FILTERS map to score 0 in each
-    scoring function.  With all sub-scores equal and weights summing to 1.0,
-    the weighted total equals the sub-score value.
+    Uses soft bias: t_i = target + α·(w_i − Σw_j²).  This preserves the
+    weighted sum exactly while giving higher thresholds to dimensions with
+    more weight (they matter more → demand more).  α=100 provides meaningful
+    differentiation without extreme values.
     """
-    keys = [
-        "dividend_yield", "dividend_growth", "payout_safety",
-        "valuation", "financial_health", "consistency", "technical_timing",
-    ]
-    value = round(min(max(target, 0), 100), 1)
-    return {k: value for k in keys}
+    weights = {
+        "dividend_yield": 0.15,
+        "dividend_growth": 0.18,
+        "payout_safety": 0.10,
+        "valuation": 0.10,
+        "financial_health": 0.07,
+        "consistency": 0.10,
+        "technical_timing": 0.30,
+    }
+    sum_w_sq = sum(w ** 2 for w in weights.values())
+    alpha = 100
+    return {
+        k: round(min(max(target + alpha * (w - sum_w_sq), 0), 100), 1)
+        for k, w in weights.items()
+    }
 
 
 # ======================================================================
