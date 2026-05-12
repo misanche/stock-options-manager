@@ -475,3 +475,68 @@ def passes_minimum_filters(
         metrics.get("dividend_cagr_5y", 0) > f["min_growth"],
     ]
     return all(checks)
+
+
+def filter_detail(
+    metrics: Dict[str, Any],
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return per-filter pass/fail detail with actual vs threshold values."""
+    f = {**DEFAULT_FILTERS, **(filters or {})}
+
+    checks = {
+        "min_yield": {
+            "label": "Dividend Yield",
+            "actual": metrics.get("dividend_yield", 0),
+            "threshold": f["min_yield"],
+            "op": ">=",
+            "passes": metrics.get("dividend_yield", 0) >= f["min_yield"],
+        },
+        "max_payout": {
+            "label": "Payout Ratio",
+            "actual": metrics.get("payout_ratio", 1.0),
+            "threshold": f["max_payout"],
+            "op": "<=",
+            "passes": metrics.get("payout_ratio", 1.0) <= f["max_payout"],
+        },
+        "max_pe": {
+            "label": "P/E Ratio",
+            "actual": metrics.get("pe_ratio", 999),
+            "threshold": f["max_pe"],
+            "op": "<=",
+            "passes": metrics.get("pe_ratio", 999) <= f["max_pe"],
+        },
+        "max_de": {
+            "label": "Debt/Equity",
+            "actual": metrics.get("debt_to_equity", 999),
+            "threshold": f["max_de"],
+            "op": "<=",
+            "passes": metrics.get("debt_to_equity", 999) <= f["max_de"],
+        },
+        "min_years": {
+            "label": "Consecutive Increases",
+            "actual": metrics.get("years_consecutive_increases", 0),
+            "threshold": f["min_years"],
+            "op": ">=",
+            "passes": metrics.get("years_consecutive_increases", 0) >= f["min_years"],
+        },
+        "min_market_cap": {
+            "label": "Market Cap",
+            "actual": metrics.get("market_cap", 0),
+            "threshold": f["min_market_cap"],
+            "op": ">=",
+            "passes": metrics.get("market_cap", 0) >= f["min_market_cap"],
+        },
+        "min_growth": {
+            "label": "Div Growth (5Y CAGR)",
+            "actual": metrics.get("dividend_cagr_5y", 0),
+            "threshold": f["min_growth"],
+            "op": ">",
+            "passes": metrics.get("dividend_cagr_5y", 0) > f["min_growth"],
+        },
+    }
+
+    return {
+        "passes_all": all(c["passes"] for c in checks.values()),
+        "checks": checks,
+    }

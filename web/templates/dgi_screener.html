@@ -435,6 +435,51 @@
         // Top-level info
         var topFields = { rank: entry.rank, quality_score: entry.quality_score, category: entry.category, entry_tag: entry.entry_tag, days_on_list: entry.days_on_list, first_appeared: entry.first_appeared };
         html += buildSection('Overview', topFields);
+
+        // Filter Status section
+        if (entry.filter_detail && entry.filter_detail.checks) {
+            var fd = entry.filter_detail;
+            var passAll = fd.passes_all;
+            var filterHtml = '<div style="margin-bottom:1.25rem;">';
+            filterHtml += '<h4 style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">'
+                + (passAll ? '✅' : '⚠️') + ' Filter Status</h4>';
+            filterHtml += '<div style="background:var(--bg-input);border-radius:var(--radius);padding:0.75rem 1rem;">';
+
+            var checks = fd.checks;
+            var filterKeys = Object.keys(checks);
+            for (var fi = 0; fi < filterKeys.length; fi++) {
+                var fk = filterKeys[fi];
+                var fc = checks[fk];
+                var icon = fc.passes ? '✅' : '❌';
+                var color = fc.passes ? 'var(--text)' : 'var(--red, #ef4444)';
+                var actualFmt = typeof fc.actual === 'number' ? fc.actual.toLocaleString(undefined, {maximumFractionDigits:4}) : String(fc.actual);
+                var threshFmt = typeof fc.threshold === 'number' ? fc.threshold.toLocaleString(undefined, {maximumFractionDigits:4}) : String(fc.threshold);
+
+                if (fk === 'min_yield' || fk === 'max_payout' || fk === 'min_growth') {
+                    actualFmt = (fc.actual * 100).toFixed(2) + '%';
+                    threshFmt = (fc.threshold * 100).toFixed(2) + '%';
+                }
+                if (fk === 'min_market_cap') {
+                    actualFmt = '$' + (fc.actual / 1e9).toFixed(1) + 'B';
+                    threshFmt = '$' + (fc.threshold / 1e9).toFixed(1) + 'B';
+                }
+                if (fk === 'min_years') {
+                    actualFmt = Math.round(fc.actual) + ' yrs';
+                    threshFmt = Math.round(fc.threshold) + ' yrs';
+                }
+
+                filterHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;'
+                    + (fi < filterKeys.length - 1 ? 'border-bottom:1px solid var(--border);' : '')
+                    + 'color:' + color + ';">';
+                filterHtml += '<span>' + icon + ' ' + fc.label + '</span>';
+                filterHtml += '<span style="font-family:var(--font-mono);font-size:0.85rem;">' + actualFmt + ' <span style="color:var(--text-muted);font-size:0.8rem;">' + fc.op + ' ' + threshFmt + '</span></span>';
+                filterHtml += '</div>';
+            }
+
+            filterHtml += '</div></div>';
+            html += filterHtml;
+        }
+
         if (entry.metrics) html += buildSection('Fundamentals', entry.metrics);
         if (entry.technicals) html += buildSection('Technical Timing', entry.technicals);
         modalBody.innerHTML = html;

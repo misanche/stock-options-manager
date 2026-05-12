@@ -174,6 +174,7 @@ def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
 
     category = dgi_metrics.categorize_stock(metrics)
     passes_filters = dgi_metrics.passes_minimum_filters(metrics, filters)
+    filter_details = dgi_metrics.filter_detail(metrics, filters)
 
     return {
         "symbol": symbol,
@@ -186,6 +187,7 @@ def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
         "category": category,
         "has_dividends": has_dividends,
         "passes_minimum_filters": passes_filters,
+        "filter_detail": filter_details,
     }
 
 

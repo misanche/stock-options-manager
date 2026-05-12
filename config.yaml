@@ -74,7 +74,7 @@ dgi_screener:
     valuation: 0.12
     financial_health: 0.08
     consistency: 0.05
-    technical_timing: 0.00
+    technical_timing: 0.20
   technical_indicators:
     rsi_period: 14
     bb_period: 20
