@@ -261,8 +261,8 @@ def _clamp(value: float) -> float:
 
 
 def _dividend_yield_score(dividend_yield: float) -> float:
-    """1.5% → 0, 3% → 50, 6%+ → 100."""
-    return _clamp((dividend_yield - 0.015) / 0.045 * 100)
+    """0% → 0, 2.5% → 50, 5%+ → 100."""
+    return _clamp(dividend_yield / 0.05 * 100)
 
 
 def _dividend_growth_score(cagr_5y: float) -> float:
