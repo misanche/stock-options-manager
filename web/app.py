@@ -860,71 +860,7 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
             "is_position_monitor": is_pm,
         })
 
-    # --- Merge into dashboard cards ---
-    pm_rows = []
-    pm_buttons = []
-    wl_rows = []
-    wl_buttons = []
-
-    for tbl in agent_tables:
-        for row in tbl["rows"]:
-            row["agent_key"] = tbl["key"]
-        if tbl["is_position_monitor"]:
-            for row in tbl["rows"]:
-                risk = (row.get("assignment_risk") or "").lower()
-                if risk in ("critical",):
-                    row["risk_border"] = "critical"
-                elif risk in ("high",):
-                    row["risk_border"] = "high"
-                elif risk in ("medium", "moderate"):
-                    row["risk_border"] = "medium"
-                else:
-                    row["risk_border"] = "low"
-            pm_rows.extend(tbl["rows"])
-            pm_buttons.append({"agent_key": tbl["key"],
-                               "label": "▶ " + tbl["label"].replace("Open ", "")})
-        else:
-            for row in tbl["rows"]:
-                acts = row.get("recent_activities", [])
-                last_act = acts[-1]["activity"].upper() if acts else ""
-                if last_act in ("SELL", "CLOSE", "ROLL", "ROLL_UP",
-                                "ROLL_DOWN", "ROLL_OUT",
-                                "ROLL_UP_AND_OUT", "ROLL_DOWN_AND_OUT"):
-                    row["risk_border"] = "medium"
-                elif last_act in ("WAIT", "HOLD"):
-                    row["risk_border"] = "low"
-                else:
-                    row["risk_border"] = "none"
-                row["type_label"] = ("CC" if tbl["key"] == "covered_call"
-                                     else "CSP")
-            wl_rows.extend(tbl["rows"])
-            wl_buttons.append({"agent_key": tbl["key"],
-                               "label": "▶ " + tbl["label"].replace(
-                                   "Following · ", "")})
-
-    pm_rows.sort(key=lambda r: (r.get("dte") is None, r.get("dte") or 0))
-    wl_rows.sort(key=lambda r: r.get("symbol", ""))
-
-    dashboard_cards = [
-        {
-            "id": "open-positions",
-            "label": "Open Positions",
-            "rows": pm_rows,
-            "run_buttons": pm_buttons,
-            "is_position_monitor": True,
-            "empty_text": "No open positions",
-        },
-        {
-            "id": "watchlist",
-            "label": "Watchlist",
-            "rows": wl_rows,
-            "run_buttons": wl_buttons,
-            "is_position_monitor": False,
-            "empty_text": "No followed symbols",
-        },
-    ]
-
-    return agent_tables, grand_totals, dashboard_cards
+    return agent_tables, grand_totals
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -935,7 +871,6 @@ async def dashboard(request: Request):
     empty_ctx = {
         "request": request,
         "agent_tables": [],
-        "dashboard_cards": [],
         "grand_totals": {"today": 0, "week": 0, "month": 0, "total": 0},
         "symbol_count": 0, "position_count": 0, "activity": [],
         "agent_types": AGENT_TYPES,
@@ -982,7 +917,7 @@ async def dashboard(request: Request):
         for s in all_symbols
     )
 
-    agent_tables, grand_totals, dashboard_cards = _build_dashboard_tables(
+    agent_tables, grand_totals = _build_dashboard_tables(
         cosmos, all_symbols, all_alerts, all_activities)
 
     activity = []
@@ -996,7 +931,6 @@ async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "agent_tables": agent_tables,
-        "dashboard_cards": dashboard_cards,
         "grand_totals": grand_totals,
         "symbol_count": symbol_count,
         "position_count": position_count,
