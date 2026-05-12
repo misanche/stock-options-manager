@@ -1669,3 +1669,13 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - Chart instance tracked in `_radarChart` variable; destroyed on each `openDetail()` call to avoid canvas reuse issues.
 - Data source: `entry.quality_detail.sub_scores`, `.minimum_thresholds`, `.ideal_thresholds` — all already serialized in the row's `data-entry` JSON from `dgi_screener.py:179`.
 - Graceful degradation: if `quality_detail` is missing, the radar container is hidden.
+
+## Learnings
+
+### yfinance `dividendYield` is ALWAYS percentage-form (2024-era API)
+- Tested JNJ (2.42), T (4.46), KO (2.7), O (5.19), MSFT (0.88), AAPL (0.37) — ALL percentage-form.
+- `trailingAnnualDividendYield` is reliably decimal (0.024 = 2.4%).
+- The old heuristic `if > 1: divide by 100` only worked for yields above 1%, silently breaking sub-1% stocks (MSFT, AAPL).
+- Fix: unconditionally divide `dividendYield` by 100. No conditional needed.
+- The display template must multiply stored decimal values by 100 for percentage display (consistent with how CAGR was already handled).
+- Filter modal line 459 `(fc.actual * 100)` was already correct for decimal — it was producing 88% because the input was 0.88 (percentage) not 0.0088 (decimal).

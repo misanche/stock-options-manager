@@ -115,10 +115,10 @@ def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
     years = dgi_metrics.calculate_years_consecutive_increases(dividends) if has_dividends else 0
     cagr = dgi_metrics.calculate_dividend_cagr(dividends) if has_dividends else 0.0
 
+    # yfinance dividendYield is ALWAYS percentage-form (0.88 = 0.88%, 2.42 = 2.42%)
+    # Convert to decimal (0.0088, 0.0242) for internal use.
     raw_yield = info.get("dividendYield") or 0
-    # yfinance may return % (2.77) or decimal (0.0277) — normalize to decimal
-    if raw_yield > 1:
-        raw_yield = raw_yield / 100.0
+    raw_yield = raw_yield / 100.0
 
     metrics = {
         "dividend_yield": raw_yield,
@@ -269,9 +269,9 @@ async def run_dgi_screener(config, cosmos) -> dict:
             years = dgi_metrics.calculate_years_consecutive_increases(dividends)
             cagr = dgi_metrics.calculate_dividend_cagr(dividends)
 
+            # yfinance dividendYield is ALWAYS percentage-form — convert to decimal
             raw_yield = info.get("dividendYield") or 0
-            if raw_yield > 1:
-                raw_yield = raw_yield / 100.0
+            raw_yield = raw_yield / 100.0
 
             metrics = {
                 "dividend_yield": raw_yield,

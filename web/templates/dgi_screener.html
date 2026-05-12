@@ -112,7 +112,7 @@
                         {{ "%.1f" | format(score) }}
                     </span>
                 </td>
-                <td class="mono">{{ "%.2f" | format(metrics.dividend_yield | default(0)) }}%</td>
+                <td class="mono">{{ "%.2f" | format((metrics.dividend_yield | default(0)) * 100) }}%</td>
                 <td class="mono">{{ "%.1f" | format((metrics.dividend_cagr_5y | default(0)) * 100) }}%</td>
                 <td class="mono">{{ metrics.years_consecutive_increases | default('—') }}</td>
                 <td class="mono">{{ entry.days_on_list | default(0) }}</td>
@@ -246,7 +246,7 @@
                 var price = (entry.metrics && entry.metrics.current_price) || 0;
 
                 var passQS = qualityScore >= qsVal;
-                var passDY = dividendYield >= (dyVal / 10);
+                var passDY = (dividendYield * 100) >= (dyVal / 10);
                 var passDG = (dividendCAGR * 100) >= dgVal;
                 var passYears = years >= yearsVal;
                 var passTiming = timing >= timingVal;
