@@ -40,9 +40,10 @@
         <table>
             {% if agent.is_position_monitor %}
             <colgroup>
-                <col style="width:20%">
+                <col style="width:19%">
                 <col style="width:8%">
-                <col style="width:22%">
+                <col style="width:7%">
+                <col style="width:16%">
                 <col style="width:7%">
                 <col style="width:9%">
                 <col style="width:9%">
@@ -66,6 +67,7 @@
                 <tr>
                     <th>{{ "Position" if agent.is_position_monitor else "Symbol" }}</th>
                     <th class="num">Price</th>
+                    {% if agent.is_position_monitor %}<th class="num">% Strike</th>{% endif %}
                     <th>Recent</th>
                     {% if agent.is_position_monitor %}
                     <th class="num">DTE</th>
@@ -86,6 +88,17 @@
                 <tr class="clickable-row" data-href="/symbols/{{ row.symbol }}">
                     <td><strong>{{ row.display }}</strong></td>
                     <td class="num mono">{{ "$%.2f" | format(row.underlying_price) if row.underlying_price else "—" }}</td>
+                    {% if agent.is_position_monitor %}
+                    <td class="num mono">
+                        {% if row.strike_pct is not none %}
+                        {% if row.option_type == "call" %}
+                        <span style="color: var({{ '--accent-red' if row.strike_pct > 0 else '--accent-green' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
+                        {% else %}
+                        <span style="color: var({{ '--accent-green' if row.strike_pct > 0 else '--accent-red' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
+                        {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endif %}
                     <td class="trend-cell">
                         {% if row.recent_activities %}
                         {% for act in row.recent_activities %}

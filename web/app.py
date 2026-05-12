@@ -823,6 +823,20 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
                 row["moneyness"] = dec.get("moneyness")
                 row["assignment_risk"] = dec.get("assignment_risk")
                 row["delta"] = dec.get("delta")
+                # % Strike: percentage difference between underlying and strike
+                parts = key.split("_")
+                try:
+                    strike = float(parts[1]) if len(parts) > 1 else None
+                except (ValueError, IndexError):
+                    strike = None
+                up = row.get("underlying_price")
+                if strike and up is not None:
+                    row["strike_pct"] = ((up - strike) / strike) * 100
+                else:
+                    row["strike_pct"] = None
+                row["option_type"] = (
+                    "call" if agent_key == "open_call_monitor" else "put"
+                )
             else:
                 dec = latest_by_key.get(key, {})
                 row["strike"] = dec.get("strike")
