@@ -842,6 +842,20 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
                 row["strike"] = dec.get("strike")
                 row["expiration"] = dec.get("expiration")
                 row["premium"] = dec.get("premium")
+                # Gap: percentage difference between price and recommended strike
+                up = row.get("underlying_price")
+                rec_strike = dec.get("strike")
+                try:
+                    rec_strike_f = float(rec_strike) if rec_strike else None
+                except (ValueError, TypeError):
+                    rec_strike_f = None
+                if rec_strike_f and up is not None:
+                    row["strike_pct"] = ((up - rec_strike_f) / rec_strike_f) * 100
+                else:
+                    row["strike_pct"] = None
+                row["option_type"] = (
+                    "call" if agent_key == "covered_call" else "put"
+                )
             rows.append(row)
 
         total_counts = _count_by_range(agent_alerts)
