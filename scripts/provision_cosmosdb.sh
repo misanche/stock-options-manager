@@ -55,11 +55,22 @@ az cosmosdb create \
   --name "$COSMOSDB_ACCOUNT" \
   --resource-group "$RESOURCE_GROUP" \
   --kind GlobalDocumentDB \
-  --capabilities EnableServerless \
+  --capacity-mode Serverless \
   --default-consistency-level Session \
   --locations regionName="$LOCATION" failoverPriority=0 isZoneRedundant=false \
   --only-show-errors \
   -o none
+
+# Option A-alt: Legacy serverless flag (uncomment if --capacity-mode is not supported)
+# az cosmosdb create \
+#   --name "$COSMOSDB_ACCOUNT" \
+#   --resource-group "$RESOURCE_GROUP" \
+#   --kind GlobalDocumentDB \
+#   --capabilities EnableServerless \
+#   --default-consistency-level Session \
+#   --locations regionName="$LOCATION" failoverPriority=0 isZoneRedundant=false \
+#   --only-show-errors \
+#   -o none
 
 # Option B: Provisioned throughput (uncomment below, comment out Option A above)
 # echo "▶ Creating CosmosDB account '$COSMOSDB_ACCOUNT' (provisioned)..."
@@ -115,9 +126,9 @@ echo "  ✓ Container ready"
 
 # ── 4b. Create Telemetry Container ───────────────────────────────────────────
 TELEMETRY_CONTAINER="telemetry"
-echo "▶ Creating container '$TELEMETRY_CONTAINER' (partition key: /metric_type, TTL enabled)..."
+echo "▶ Creating container '$TELEMETRY_CONTAINER' (partition key: /metric_type)..."
 
-# Serverless container with per-document TTL enabled
+# Serverless container
 az cosmosdb sql container create \
   --account-name "$COSMOSDB_ACCOUNT" \
   --resource-group "$RESOURCE_GROUP" \
@@ -125,7 +136,17 @@ az cosmosdb sql container create \
   --name "$TELEMETRY_CONTAINER" \
   --partition-key-path "/metric_type" \
   --partition-key-version 2 \
-  --default-ttl -1 \
+  --only-show-errors \
+  -o none
+
+# Enable TTL (30 days = 2592000 seconds)
+echo "▶ Enabling TTL on '$TELEMETRY_CONTAINER' (30 days)..."
+az cosmosdb sql container update \
+  --account-name "$COSMOSDB_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --database-name "$DATABASE_NAME" \
+  --name "$TELEMETRY_CONTAINER" \
+  --ttl 2592000 \
   --only-show-errors \
   -o none
 
