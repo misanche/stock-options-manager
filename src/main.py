@@ -201,7 +201,8 @@ class OptionsAgentScheduler:
         await self.runner.run_summary_agent(
             cosmos=self.cosmos,
             telegram_notifier=self.runner.telegram_notifier,
-            activity_count=activity_count
+            activity_count=activity_count,
+            model=self.config.model_for('summary'),
         )
     
     def run_options_chain_fetch_job(self):

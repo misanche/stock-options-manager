@@ -56,6 +56,9 @@ async def run_cash_secured_put_analysis(config, runner: AgentRunner,
                 context_provider=context_provider,
                 max_activity_entries=config.max_activity_entries,
                 fetcher=fetcher,
+                model=config.model_for('analysis'),
+                supervisor_model=config.model_for('supervisor'),
+                alpha_model=config.model_for('alpha'),
             )
 
     print(f"\n{'='*60}")

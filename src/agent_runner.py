@@ -69,16 +69,32 @@ class AgentRunner:
         
         Args:
             project_endpoint: Azure AI Foundry project endpoint URL
-            model: Model deployment name
+            model: Default model deployment name
             api_key: Azure OpenAI API key
             telegram_notifier: Optional TelegramNotifier for alert notifications
         """
-        self.client = AzureOpenAIChatClient(
-            endpoint=project_endpoint,
-            deployment_name=model,
-            api_key=api_key,
-        )
+        self._endpoint = project_endpoint
+        self._api_key = api_key
+        self._default_model = model
+        self._clients: Dict[str, AzureOpenAIChatClient] = {}
         self.telegram_notifier = telegram_notifier
+
+    def _get_client(self, model: str = None) -> AzureOpenAIChatClient:
+        """Return a cached AzureOpenAIChatClient for the given deployment name."""
+        deployment = model or self._default_model
+        if deployment not in self._clients:
+            logger.info("Creating AzureOpenAIChatClient for deployment=%s", deployment)
+            self._clients[deployment] = AzureOpenAIChatClient(
+                endpoint=self._endpoint,
+                deployment_name=deployment,
+                api_key=self._api_key,
+            )
+        return self._clients[deployment]
+
+    @property
+    def client(self) -> AzureOpenAIChatClient:
+        """Backward-compatible accessor — returns the default model client."""
+        return self._get_client()
     
     # ── Options chain formatting ────────────────────────────────────────
 
@@ -671,6 +687,7 @@ class AgentRunner:
         market_data: str,
         previous_context: str,
         agent_type: str,
+        model: str = None,
     ) -> dict | None:
         """Run a supervisor agent to audit the primary decision.
 
@@ -707,7 +724,7 @@ class AgentRunner:
 Provide your supervisor audit in the JSON format specified above."""
 
             agent = ChatAgent(
-                chat_client=self.client,
+                chat_client=self._get_client(model),
                 name=f"Supervisor_{agent_type}",
                 instructions=instructions,
             )
@@ -800,6 +817,7 @@ Provide your supervisor audit in the JSON format specified above."""
         market_data: str,
         previous_context: str,
         agent_type: str,
+        model: str = None,
     ) -> dict | None:
         """Run an alpha advisor agent for aggressive perspective.
 
@@ -836,7 +854,7 @@ Provide your supervisor audit in the JSON format specified above."""
 Provide your alpha advisor analysis in the JSON format specified above."""
 
             agent = ChatAgent(
-                chat_client=self.client,
+                chat_client=self._get_client(model),
                 name=f"Alpha_{agent_type}",
                 instructions=instructions,
             )
@@ -957,6 +975,9 @@ Provide your alpha advisor analysis in the JSON format specified above."""
         context_provider: ContextProvider,
         max_activity_entries: int = 2,
         fetcher=None,
+        model: str = None,
+        supervisor_model: str = None,
+        alpha_model: str = None,
     ):
         """Run agent analysis for a single symbol.
 
@@ -1028,7 +1049,7 @@ Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Do NOT use any browser tools — analyze the data provided and output your activity in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
             agent = ChatAgent(
-                chat_client=self.client,
+                chat_client=self._get_client(model),
                 name=name,
                 instructions=instructions,
             )
@@ -1102,12 +1123,14 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=supervisor_model,
                     ),
                     self._run_alpha_review(
                         activity_payload=activity_payload,
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=alpha_model,
                     ),
                 )
             else:
@@ -1121,12 +1144,14 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                             market_data=market_data,
                             previous_context=previous_context,
                             agent_type=agent_type,
+                            model=supervisor_model,
                         ),
                         self._run_alpha_review(
                             activity_payload=activity_payload,
                             market_data=market_data,
                             previous_context=previous_context,
                             agent_type=agent_type,
+                            model=alpha_model,
                         ),
                     )
                 else:
@@ -1136,6 +1161,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=supervisor_model,
                     )
                     alpha_view = None
                     print(f"Logged activity")
@@ -1322,6 +1348,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
         previous_context: str,
         analysis_ts: str,
         current_contract_chain: str = "",
+        model: str = None,
     ) -> Tuple[str, Optional[Dict], Optional[Dict]]:
         """Run Phase 1 — position assessment agent.
 
@@ -1361,7 +1388,7 @@ Current timestamp: {analysis_ts}
 Analyze the position risk and output your response in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
         agent = ChatAgent(
-            chat_client=self.client,
+            chat_client=self._get_client(model),
             name=name,
             instructions=instructions,
         )
@@ -1399,6 +1426,7 @@ Analyze the position risk and output your response in the required JSON format. 
         filtered_chain_text: str,
         analysis_ts: str,
         full_symbol: str,
+        model: str = None,
     ) -> Tuple[str, Optional[Dict]]:
         """Run Phase 2 — roll management agent.
 
@@ -1421,7 +1449,7 @@ Current timestamp: {analysis_ts}
 Output your activity in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
         agent = ChatAgent(
-            chat_client=self.client,
+            chat_client=self._get_client(model),
             name=f"{name}_roll",
             instructions=roll_instructions,
         )
@@ -1458,6 +1486,10 @@ Output your activity in the required JSON format. Use the timestamp above in you
         fetcher=None,
         assessment_instructions: str = None,
         roll_instructions: str = None,
+        assessment_model: str = None,
+        roll_model: str = None,
+        supervisor_model: str = None,
+        alpha_model: str = None,
     ):
         """Run position monitor for a single open position (2-phase).
 
@@ -1551,6 +1583,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                 previous_context=previous_context,
                 analysis_ts=analysis_ts,
                 current_contract_chain=current_contract_chain,
+                model=assessment_model,
             )
 
             if handoff_json is not None:
@@ -1607,6 +1640,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         filtered_chain_text=filtered_chain_text,
                         analysis_ts=analysis_ts,
                         full_symbol=full_symbol,
+                        model=roll_model,
                     )
                     # Use Phase 2 output as the final result
                     response_text = phase2_response
@@ -1815,12 +1849,14 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=supervisor_model,
                     ),
                     self._run_alpha_review(
                         activity_payload=activity_payload,
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=alpha_model,
                     ),
                 )
 
@@ -1890,12 +1926,14 @@ Output your activity in the required JSON format. Use the timestamp above in you
                             market_data=market_data,
                             previous_context=previous_context,
                             agent_type=agent_type,
+                            model=supervisor_model,
                         ),
                         self._run_alpha_review(
                             activity_payload=activity_payload,
                             market_data=market_data,
                             previous_context=previous_context,
                             agent_type=agent_type,
+                            model=alpha_model,
                         ),
                     )
                 else:
@@ -1905,6 +1943,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         market_data=market_data,
                         previous_context=previous_context,
                         agent_type=agent_type,
+                        model=supervisor_model,
                     )
                     alpha_view = None
                     print(f"Logged activity")
@@ -1991,7 +2030,8 @@ Output your activity in the required JSON format. Use the timestamp above in you
         self,
         cosmos: CosmosDBService,
         telegram_notifier,
-        activity_count: int = 3
+        activity_count: int = 3,
+        model: str = None,
     ):
         """Generate and send daily portfolio summary via Telegram.
         
@@ -2158,7 +2198,7 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
 """
             
             # Run the agent
-            agent = ChatAgent(name="SummaryAgent", chat_client=self.client)
+            agent = ChatAgent(name="SummaryAgent", chat_client=self._get_client(model))
             print("🤖 Running summary agent...")
             logger.info("Invoking ChatAgent with %d symbols", len(activities_by_symbol))
             
@@ -2226,6 +2266,7 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
         context_text: str,
         cosmos: CosmosDBService,
         cached_resources: list | None = None,
+        model: str = None,
     ) -> str:
         """Generate a comprehensive position/situation report for a symbol.
 
@@ -2264,7 +2305,7 @@ Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Do NOT use any browser tools — analyze the data provided and generate your report."""
 
         agent = ChatAgent(
-            chat_client=self.client,
+            chat_client=self._get_client(model),
             name="ReportAgent",
             instructions=TV_REPORT_INSTRUCTIONS,
         )

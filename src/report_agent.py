@@ -143,6 +143,7 @@ async def run_report_analysis(
         context_text=context_text,
         cosmos=cosmos,
         cached_resources=cached_resources,
+        model=config.model_for('report'),
     )
 
     return {

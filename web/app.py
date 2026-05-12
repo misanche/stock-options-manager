@@ -1102,12 +1102,12 @@ async def symbol_report_api(request: Request, symbol: str):
         from src.report_agent import run_report_analysis
         from src.config import Config
 
+        config_obj = Config()
         runner = AgentRunner(
             project_endpoint=endpoint,
             model=model,
             api_key=api_key,
         )
-        config_obj = Config()
 
         result = await run_report_analysis(
             config=config_obj,
@@ -2746,8 +2746,14 @@ async def chat_api(request: Request):
     config = _load_config()
     azure_cfg = config.get("azure", {})
     endpoint = _resolve_env(azure_cfg.get("project_endpoint", ""))
-    model = _resolve_env(azure_cfg.get("model_deployment", "gpt-4o"))
     api_key = _resolve_env(azure_cfg.get("api_key", ""))
+
+    # Resolve per-function model override via Config
+    try:
+        from src.config import Config as _Config
+        model = _Config().model_for('chat')
+    except Exception:
+        model = _resolve_env(azure_cfg.get("model_deployment", "gpt-4o"))
 
     if not endpoint:
         return JSONResponse({"error": "Azure endpoint not configured"},
@@ -3007,8 +3013,14 @@ async def symbol_chat_api(request: Request, symbol: str):
     config = _load_config()
     azure_cfg = config.get("azure", {})
     endpoint = _resolve_env(azure_cfg.get("project_endpoint", ""))
-    model = _resolve_env(azure_cfg.get("model_deployment", "gpt-4o"))
     api_key = _resolve_env(azure_cfg.get("api_key", ""))
+
+    # Resolve per-function model override via Config
+    try:
+        from src.config import Config as _Config
+        model = _Config().model_for('symbol_chat')
+    except Exception:
+        model = _resolve_env(azure_cfg.get("model_deployment", "gpt-4o"))
 
     if not endpoint:
         return JSONResponse({"error": "Azure endpoint not configured"},

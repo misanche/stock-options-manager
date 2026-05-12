@@ -70,6 +70,11 @@ class Config:
     def api_key(self) -> str:
         return self.config['azure']['api_key']
 
+    def model_for(self, role: str) -> str:
+        """Return model deployment for a specific role, falling back to default."""
+        models = self.config.get('azure', {}).get('models', {})
+        return models.get(role) or self.model_deployment
+
     # ── CosmosDB ───────────────────────────────────────────────────────
 
     @property

@@ -2,6 +2,16 @@ azure:
   project_endpoint: "${AZURE_AI_PROJECT_ENDPOINT}"
   model_deployment: "${MODEL_DEPLOYMENT}" # options: "gpt-5.1", "gpt-5.4-mini"
   api_key: "${AZURE_OPENAI_API_KEY}"
+  models:  # optional per-function overrides — each falls back to model_deployment if not set
+    # monitor_assessment: "gpt-5.4"
+    # monitor_roll: "gpt-5.4"
+    # supervisor: "gpt-5.4-mini"
+    # alpha: "gpt-5.4-mini"
+    # analysis: "gpt-5.4"
+    # summary: "gpt-5.4-mini"
+    # report: "gpt-5.4-mini"
+    # chat: "gpt-5.4-mini"
+    # symbol_chat: "gpt-5.4-mini"
 
 cosmosdb:
   endpoint: "${COSMOSDB_ENDPOINT}"

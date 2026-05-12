@@ -68,6 +68,10 @@ async def run_open_put_monitor(config, runner: AgentRunner,
                     fetcher=fetcher,
                     assessment_instructions=assessment_instructions,
                     roll_instructions=roll_instructions,
+                    assessment_model=config.model_for('monitor_assessment'),
+                    roll_model=config.model_for('monitor_roll'),
+                    supervisor_model=config.model_for('supervisor'),
+                    alpha_model=config.model_for('alpha'),
                 )
 
     print(f"\n{'='*60}")
