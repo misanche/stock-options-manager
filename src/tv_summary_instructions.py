@@ -43,7 +43,7 @@ Symbols being watched for cash-secured put opportunities
 **For each symbol:**
 
 ```
-*SYMBOL* • Strike/Exp • Key Metric
+*SYMBOL* @ $Price • Strike/Exp • Key Metric
 📊 Market context + Delta/IV
 → Next action or timeframe
 ```
@@ -53,23 +53,23 @@ Symbols being watched for cash-secured put opportunities
 ```
 📞 *ACTIVE CALLS*
 
-*AAPL* • 185C exp 4/18 • 60% decayed
+*AAPL* @ $182.50 • 185C exp 4/18 • 60% decayed
 📈 Strong uptrend, Δ0.15 OTM, IV↓
 → Close for profit in 2-3 days
 
-*MSFT* • 420C exp 5/15 • -$120 loss
+*MSFT* @ $418.30 • 420C exp 5/15 • -$120 loss
 📊 Consolidating $415-425, Δ0.42
 → Hold through earnings 4/25
 
 📉 *ACTIVE PUTS*
 
-*TSLA* • 230P exp 5/2 • 85% premium left
+*TSLA* @ $235.10 • 230P exp 5/2 • 85% premium left
 📊 Weakening bears, support $220
 → Hold, roll up if > $240
 
 👀 *WATCHING: CALLS*
 
-*MO* • Recent CC closed +$85
+*MO* @ $52.10 • Recent CC closed +$85
 📊 Range $51-53, earnings 4/28
 → New opportunity if > $51.50
 
@@ -90,6 +90,7 @@ Use a single emoji line:
 Activities per symbol include:
 - `activity`: Action (SELL, ROLL, CLOSE, HOLD, WAIT, etc.)
 - `agent_type`: covered_call | cash_secured_put | open_call_monitor | open_put_monitor
+- `underlying_price`: Current price of the underlying stock
 - `position`, `strike`, `expiration`, `delta`, `IV`, etc.
 - `summary`, `reasoning`, `recommendation`
 
@@ -121,7 +122,7 @@ Activities per symbol include:
 - ↓↑ for IV/price direction
 
 **Line Structure (max 2-3 lines):**
-1. *SYMBOL* • Strike/Exp • Status
+1. *SYMBOL* @ $Price • Strike/Exp • Status
 2. Emoji + Market context (< 50 chars)
 3. → Action with timeframe
 

@@ -1195,6 +1195,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
                         supervisor_view=supervisor_view,
                         alpha_view=alpha_view,
                         consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                        underlying_price=json_data.get("underlying_price") if json_data else None,
                     )
 
         except Exception as e:
@@ -1940,6 +1941,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                             supervisor_view=supervisor_view,
                             alpha_view=alpha_view,
                             consecutive_waits=self.PROLONGED_WAIT_THRESHOLD,
+                            underlying_price=json_data.get("underlying_price") if json_data else None,
                         )
 
         except Exception as e:

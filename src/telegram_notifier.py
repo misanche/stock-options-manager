@@ -145,14 +145,19 @@ class TelegramNotifier:
         confidence = data.get("confidence", "N/A")
         risk_rating = data.get("risk_rating")
         premium = data.get("premium")
+        underlying_price = data.get("underlying_price")
 
         lines = [
             f"\U0001f6a8 <b>SELL Alert: {symbol}</b>",
             f"Agent: {agent_label}",
+        ]
+        if underlying_price is not None:
+            lines.append(f"Underlying: ${underlying_price}")
+        lines.extend([
             f"Strike: ${strike}",
             f"Expiration: {expiration}",
             f"Confidence: {confidence}",
-        ]
+        ])
         if premium is not None:
             lines.append(f"Premium: ${premium}")
         if risk_rating is not None:
@@ -181,6 +186,7 @@ class TelegramNotifier:
         new_exp = data.get("new_expiration", "N/A")
         confidence = data.get("confidence", "N/A")
 
+        underlying_price = data.get("underlying_price")
         assignment_risk = data.get("assignment_risk")
 
         # Roll economics / close cost fields
@@ -194,8 +200,10 @@ class TelegramNotifier:
             lines = [
                 f"\U0001f6d1 <b>CLOSE Alert: {symbol}</b>",
                 f"Agent: {agent_label}",
-                f"Position: ${current_strike} exp {current_exp}",
             ]
+            if underlying_price is not None:
+                lines.append(f"Underlying: ${underlying_price}")
+            lines.append(f"Position: ${current_strike} exp {current_exp}")
             if buyback_cost is not None:
                 lines.append(f"Buyback Cost: ${buyback_cost}")
             lines.append(f"Confidence: {confidence}")
@@ -203,10 +211,14 @@ class TelegramNotifier:
             lines = [
                 f"\U0001f504 <b>ROLL Alert: {symbol}</b>",
                 f"Agent: {agent_label}",
+            ]
+            if underlying_price is not None:
+                lines.append(f"Underlying: ${underlying_price}")
+            lines.extend([
                 f"Action: {action}",
                 f"Current: ${current_strike} exp {current_exp}",
                 f"New: ${new_strike} exp {new_exp}",
-            ]
+            ])
             if buyback_cost is not None:
                 lines.append(f"Buyback Cost: ${buyback_cost}")
             if new_premium is not None:
@@ -241,6 +253,7 @@ class TelegramNotifier:
         supervisor_view: Dict | None = None,
         alpha_view: Dict | None = None,
         consecutive_waits: int = 5,
+        underlying_price: float | None = None,
     ) -> bool:
         """Send a Telegram notification for prolonged WAIT patterns.
 
@@ -259,8 +272,10 @@ class TelegramNotifier:
 
             lines = [
                 f"\u23f3 <b>PROLONGED WAIT: {symbol}</b> ({label})",
-                f"{consecutive_waits} consecutive WAIT decisions",
             ]
+            if underlying_price is not None:
+                lines.append(f"Underlying: ${underlying_price}")
+            lines.append(f"{consecutive_waits} consecutive WAIT decisions")
 
             if supervisor_view is not None:
                 strength = supervisor_view.get("challenge_strength", "N/A")
