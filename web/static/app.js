@@ -4,8 +4,18 @@
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.clickable-row[data-href]').forEach(function(row) {
         row.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-trigger-row')) return;
+            if (e.target.closest('a, button, input, select, textarea')) return;
             window.location.href = this.dataset.href;
+        });
+    });
+
+    // Keyboard accessibility for div-based clickable rows
+    document.querySelectorAll('.clickable-row[data-href][role="link"]').forEach(function(row) {
+        row.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                window.location.href = this.dataset.href;
+            }
         });
     });
 

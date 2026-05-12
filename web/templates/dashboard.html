@@ -25,121 +25,80 @@
     </div>
 </div>
 
-<!-- Agent tables -->
-
-{% for agent in agent_tables %}
-<div class="card agent-card">
+<!-- Dashboard cards (merged tables) -->
+{% for card in dashboard_cards %}
+<div class="card agent-card" id="{{ card.id }}">
     <div class="card-header">
-        <h2>{{ agent.label }}</h2>
+        <h2>{{ card.label }}</h2>
         <div style="display:flex; align-items:center; gap:0.5rem;">
-            <button class="btn-trigger" data-agent="{{ agent.key }}" title="Run this agent now">▶ Run Analysis</button>
+            {% for btn in card.run_buttons %}
+            <button class="btn-trigger" data-agent="{{ btn.agent_key }}" title="Run {{ btn.label }}">{{ btn.label }}</button>
+            {% endfor %}
         </div>
     </div>
-    {% if agent.rows %}
-    <div class="table-wrap">
-        <table>
-            {% if agent.is_position_monitor %}
-            <colgroup>
-                <col style="width:19%">
-                <col style="width:8%">
-                <col style="width:7%">
-                <col style="width:16%">
-                <col style="width:7%">
-                <col style="width:9%">
-                <col style="width:9%">
-                <col style="width:7%">
-                <col style="width:12%">
-                <col style="width:6%">
-            </colgroup>
-            {% else %}
-            <colgroup>
-                <col style="width:18%">
-                <col style="width:8%">
-                <col style="width:22%">
-                <col style="width:8%">
-                <col style="width:10%">
-                <col style="width:8%">
-                <col style="width:20%">
-                <col style="width:6%">
-            </colgroup>
-            {% endif %}
-            <thead>
-                <tr>
-                    <th>{{ "Position" if agent.is_position_monitor else "Symbol" }}</th>
-                    <th class="num">Price</th>
-                    {% if agent.is_position_monitor %}<th class="num">% Strike</th>{% endif %}
-                    <th>Recent</th>
-                    {% if agent.is_position_monitor %}
-                    <th class="num">DTE</th>
-                    <th>Moneyness</th>
-                    <th>Risk</th>
-                    <th class="num">Delta</th>
+    {% if card.rows %}
+    <div class="position-list">
+        {% for row in card.rows %}
+        <div class="position-row risk-border-{{ row.risk_border }} clickable-row" data-href="/symbols/{{ row.symbol }}" role="link" tabindex="0">
+            <div class="position-row-main">
+                {% if card.is_position_monitor %}
+                <span class="type-badge type-badge-{{ row.option_type }}">{{ row.option_type | upper }}</span>
+                {% else %}
+                <span class="type-badge type-badge-{{ row.type_label | lower }}">{{ row.type_label }}</span>
+                {% endif %}
+                <span class="position-name">{{ row.display }}</span>
+                <span class="position-price mono">{{ "$%.2f" | format(row.underlying_price) if row.underlying_price else "—" }}</span>
+                {% if card.is_position_monitor and row.strike_pct is not none %}
+                <span class="position-strike-pct mono">
+                    {% if row.option_type == "call" %}
+                    <span style="color: var({{ '--accent-red' if row.strike_pct > 0 else '--accent-green' }})">{{ "%+.1f%%" | format(row.strike_pct) }}</span>
                     {% else %}
-                    <th class="num">Strike</th>
-                    <th>Expiry</th>
-                    <th class="num">Premium</th>
+                    <span style="color: var({{ '--accent-green' if row.strike_pct > 0 else '--accent-red' }})">{{ "%+.1f%%" | format(row.strike_pct) }}</span>
                     {% endif %}
-                    <th>Flags</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in agent.rows %}
-                <tr class="clickable-row" data-href="/symbols/{{ row.symbol }}">
-                    <td><strong>{{ row.display }}</strong></td>
-                    <td class="num mono">{{ "$%.2f" | format(row.underlying_price) if row.underlying_price else "—" }}</td>
-                    {% if agent.is_position_monitor %}
-                    <td class="num mono">
-                        {% if row.strike_pct is not none %}
-                        {% if row.option_type == "call" %}
-                        <span style="color: var({{ '--accent-red' if row.strike_pct > 0 else '--accent-green' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
-                        {% else %}
-                        <span style="color: var({{ '--accent-green' if row.strike_pct > 0 else '--accent-red' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
-                        {% endif %}
-                        {% else %}—{% endif %}
-                    </td>
-                    {% endif %}
-                    <td class="trend-cell">
-                        {% if row.recent_activities %}
-                        {% for act in row.recent_activities %}
-                            {% if not loop.first %}<span class="trend-arrow">›</span>{% endif %}
-                            <a href="/activities/{{ act.id }}" class="badge badge-{{ act.activity | lower if act.activity else 'info' }}" title="{{ act.timestamp[:16] }}">{{ act.activity or "N/A" }}</a>
-                        {% endfor %}
-                        {% else %}—{% endif %}
-                    </td>
-                    {% if agent.is_position_monitor %}
-                    <td class="num metric-value">{{ row.dte if row.dte is not none else "—" }}</td>
-                    <td>
-                        {% if row.moneyness %}
-                        <span class="badge badge-moneyness-{{ row.moneyness | lower }}">{{ row.moneyness }}</span>
-                        {% else %}—{% endif %}
-                    </td>
-                    <td>
-                        {% if row.assignment_risk %}
-                        <span class="badge badge-risk-{{ row.assignment_risk | lower }}">{{ row.assignment_risk }}</span>
-                        {% else %}—{% endif %}
-                    </td>
-                    <td class="num metric-value">{{ "%.2f" | format(row.delta) if row.delta is not none else "—" }}</td>
-                    {% else %}
-                    <td class="num metric-value">{{ row.strike if row.strike else "—" }}</td>
-                    <td>{{ row.expiration if row.expiration else "—" }}</td>
-                    <td class="num metric-value">{{ "$%.2f" | format(row.premium) if row.premium else "—" }}</td>
-                    {% endif %}
-                    <td>
-                        {% for flag in (row.risk_flags or []) %}
-                        <span class="flag">{{ flag }}</span>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        <button class="btn-trigger-row" data-agent="{{ agent.key }}" data-symbol="{{ row.symbol }}" title="Run analysis for {{ row.symbol }}">▶</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </span>
+                {% endif %}
+                <span class="position-recent trend-cell">
+                    {% if row.recent_activities %}
+                    {% for act in row.recent_activities %}
+                        {% if not loop.first %}<span class="trend-arrow">›</span>{% endif %}
+                        <a href="/activities/{{ act.id }}" class="badge badge-{{ act.activity | lower if act.activity else 'info' }}" title="{{ act.timestamp[:16] }}">{{ act.activity or "N/A" }}</a>
+                    {% endfor %}
+                    {% else %}—{% endif %}
+                </span>
+                <button class="btn-trigger-row" data-agent="{{ row.agent_key }}" data-symbol="{{ row.symbol }}" title="Run analysis for {{ row.symbol }}">▶</button>
+            </div>
+            <div class="position-row-meta">
+                {% if card.is_position_monitor %}
+                <span class="meta-item">DTE <strong class="metric-value">{{ row.dte if row.dte is not none else "—" }}</strong></span>
+                <span class="meta-sep">·</span>
+                <span class="meta-item">
+                    {% if row.moneyness %}<span class="badge badge-moneyness-{{ row.moneyness | lower }}">{{ row.moneyness }}</span>{% else %}—{% endif %}
+                </span>
+                <span class="meta-sep">·</span>
+                <span class="meta-item">
+                    {% if row.assignment_risk %}<span class="badge badge-risk-{{ row.assignment_risk | lower }}">{{ row.assignment_risk }}</span>{% else %}—{% endif %}
+                </span>
+                <span class="meta-sep">·</span>
+                <span class="meta-item">Δ <strong class="metric-value">{{ "%.2f" | format(row.delta) if row.delta is not none else "—" }}</strong></span>
+                {% if row.risk_flags %}
+                <span class="meta-sep">·</span>
+                <span class="meta-item meta-flags">{% for flag in row.risk_flags %}<span class="flag">{{ flag }}</span>{% endfor %}</span>
+                {% endif %}
+                {% else %}
+                {% if row.strike %}<span class="meta-item">Strike <strong class="metric-value">${{ row.strike }}</strong></span><span class="meta-sep">·</span>{% endif %}
+                {% if row.expiration %}<span class="meta-item">Exp <strong class="metric-value">{{ row.expiration }}</strong></span><span class="meta-sep">·</span>{% endif %}
+                {% if row.premium %}<span class="meta-item">Premium <strong class="metric-value">${{ "%.2f" | format(row.premium) }}</strong></span>{% endif %}
+                {% if row.risk_flags %}
+                <span class="meta-sep">·</span>
+                <span class="meta-item meta-flags">{% for flag in row.risk_flags %}<span class="flag">{{ flag }}</span>{% endfor %}</span>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
     </div>
     {% else %}
-    <p class="empty-state">No alerts recorded yet</p>
+    <p class="empty-state">{{ card.empty_text }}</p>
     {% endif %}
 </div>
 {% endfor %}

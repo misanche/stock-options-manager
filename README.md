@@ -804,8 +804,18 @@ Edit `config.yaml` to customize:
 ```yaml
 azure:
   project_endpoint: "${AZURE_AI_PROJECT_ENDPOINT}"
-  model_deployment: "${MODEL_DEPLOYMENT}"  # From env variable (e.g. gpt-5.1, gpt-5.4-mini)
+  model_deployment: "${MODEL_DEPLOYMENT}"  # Default model for all agents
   api_key: "${AZURE_OPENAI_API_KEY}"
+  models:  # Optional per-function overrides (each falls back to model_deployment)
+    monitor_assessment: "gpt-5.4"
+    monitor_roll: "gpt-5.4"
+    supervisor: "gpt-5.4-mini"
+    alpha: "gpt-5.4-mini"
+    analysis: "gpt-5.4"
+    summary: "gpt-5.4-mini"
+    report: "gpt-5.4-mini"
+    chat: "gpt-5.4-mini"
+    symbol_chat: "gpt-5.4-mini"
 
 cosmosdb:
   endpoint: "${COSMOSDB_ENDPOINT}"
@@ -824,6 +834,26 @@ telegram:
   bot_token: "${TELEGRAM_BOT_TOKEN}"    # Bot token from @BotFather
   chat_id: "${TELEGRAM_CHAT_ID}"        # Target chat/group/channel ID
 ```
+
+### Per-Function Model Overrides
+
+Each agent function can use a different Azure OpenAI model deployment. If no override is set for a function, it falls back to the global `model_deployment`.
+
+**Why it matters:** Different agents have different reasoning needs. Use this to optimize cost vs quality:
+
+| Key | Agent Function | Reasoning Need | Recommended Model | Why |
+|-----|---------------|----------------|-------------------|-----|
+| `monitor_assessment` | Position assessment (open calls/puts) | 🔴 High | `gpt-5.4` | Evaluates complex multi-factor risk: moneyness, delta, DTE, assignment risk, IV changes. Wrong assessment = missed roll opportunity or unnecessary action. |
+| `monitor_roll` | Roll management (open calls/puts) | 🔴 High | `gpt-5.4` | Reads full options chain, calculates credit/debit, selects optimal strike/expiration. Requires strong numerical reasoning across dozens of contracts. |
+| `analysis` | New position analysis (CC/CSP) | 🔴 High | `gpt-5.4` | Full market analysis: technicals, fundamentals, IV rank, support/resistance. Entry decisions are high-stakes — a bad signal costs real money. |
+| `supervisor` | Supervisor review | 🟡 Medium | `gpt-5.4-mini` | Reviews and validates another agent's output. Structured input, binary-ish output (approve/flag issues). Fast model sufficient. |
+| `alpha` | Alpha advisor | 🟡 Medium | `gpt-5.4-mini` | Suggests contrarian alternatives. Creative but constrained scope — reviewing existing analysis, not generating from scratch. |
+| `summary` | Daily summary | 🟢 Low | `gpt-5.4-mini` | Aggregates existing activity data into a narrative. No complex reasoning — just formatting and synthesis. |
+| `report` | Weekly/monthly report | 🟢 Low | `gpt-5.4-mini` | Similar to summary but over longer periods. Straightforward data aggregation. |
+| `chat` | Interactive chat | 🟢 Low | `gpt-5.4-mini` | Conversational Q&A about positions and market. Latency matters more than depth. |
+| `symbol_chat` | Symbol-specific chat | 🟢 Low | `gpt-5.4-mini` | Focused chat about a single symbol. Same rationale as general chat. |
+
+**Cost optimization tip:** The three high-reasoning agents (`monitor_assessment`, `monitor_roll`, `analysis`) are where model quality directly impacts trading decisions. These justify a more capable (and expensive) model. The remaining six functions handle review, summarization, and chat — tasks where a faster, cheaper model performs equally well. This split can reduce costs by ~60% compared to using a premium model for everything.
 
 ### Running
 
@@ -1133,7 +1163,7 @@ az containerapp update \
 | Variable | Required | Description |
 |---|---|---|
 | `AZURE_AI_PROJECT_ENDPOINT` | Yes | Azure AI Foundry project endpoint |
-| `MODEL_DEPLOYMENT` | Yes | Model deployment name (e.g., `gpt-5.1`, `gpt-5.4-mini`) |
+| `MODEL_DEPLOYMENT` | Yes | Default model deployment name — used by all agents unless overridden in `config.yaml` `azure.models` (e.g., `gpt-5.4-mini`) |
 | `AZURE_OPENAI_API_KEY` | Yes | Azure OpenAI API key |
 | `COSMOSDB_ENDPOINT` | Yes | CosmosDB account endpoint (e.g., `https://account.documents.azure.com:443/`) |
 | `COSMOSDB_KEY` | Yes | CosmosDB primary key |

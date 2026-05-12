@@ -297,6 +297,98 @@ tbody td:last-child, thead th:last-child { text-align: right; width: 1%; white-s
 .clickable-row { cursor: pointer; transition: background 0.15s; }
 .clickable-row:hover { background: var(--bg-hover); }
 
+/* ── Position card-list layout ── */
+.position-list { padding: 0; }
+
+.position-row {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    transition: background 0.15s;
+}
+.position-row:last-child { border-bottom: none; }
+.position-row:hover { background: var(--bg-hover); }
+.position-row:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+
+/* Risk-based left border */
+.risk-border-low { border-left-color: var(--accent-green); }
+.risk-border-medium { border-left-color: var(--accent-orange); }
+.risk-border-high { border-left-color: var(--accent-red); }
+.risk-border-critical { border-left-color: #ff6b6b; }
+.risk-border-none { border-left-color: transparent; }
+
+/* Main row line */
+.position-row-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.position-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    min-width: 180px;
+}
+.position-price {
+    font-size: 0.9rem;
+    color: var(--text);
+    min-width: 70px;
+}
+.position-strike-pct {
+    font-size: 0.85rem;
+    min-width: 55px;
+}
+.position-recent {
+    flex: 1;
+    min-width: 120px;
+}
+
+/* Type badges */
+.type-badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    min-width: 36px;
+    text-align: center;
+}
+.type-badge-call { background: rgba(73,79,223,0.2); color: var(--accent-blue); }
+.type-badge-put { background: rgba(167,139,250,0.2); color: var(--accent-purple); }
+.type-badge-cc { background: rgba(73,79,223,0.2); color: var(--accent-blue); }
+.type-badge-csp { background: rgba(167,139,250,0.2); color: var(--accent-purple); }
+
+/* Meta/secondary row */
+.position-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+    padding-left: calc(36px + 0.75rem);
+    flex-wrap: wrap;
+}
+.meta-item {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.meta-item strong {
+    color: var(--text);
+    font-weight: 500;
+}
+.meta-sep {
+    color: var(--text-muted);
+    opacity: 0.4;
+    font-size: 0.7rem;
+}
+.meta-flags {
+    display: inline-flex;
+    gap: 3px;
+    flex-wrap: wrap;
+}
+
 /* ── Badges ── */
 .badge {
     display: inline-block;
