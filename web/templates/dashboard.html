@@ -67,7 +67,7 @@
                 <tr>
                     <th>{{ "Position" if agent.is_position_monitor else "Symbol" }}</th>
                     <th class="num">Price</th>
-                    {% if agent.is_position_monitor %}<th class="num">% Strike</th>{% endif %}
+                    {% if agent.is_position_monitor %}<th class="num">Gap</th>{% endif %}
                     <th>Recent</th>
                     {% if agent.is_position_monitor %}
                     <th class="num">DTE</th>
@@ -92,9 +92,9 @@
                     <td class="num mono">
                         {% if row.strike_pct is not none %}
                         {% if row.option_type == "call" %}
-                        <span style="color: var({{ '--accent-red' if row.strike_pct > 0 else '--accent-green' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
+                        <span style="color: var({{ '--accent-red' if row.strike_pct > 0 else '--accent-green' }})">{{ "%+.1f%%" | format(row.strike_pct) }}</span>
                         {% else %}
-                        <span style="color: var({{ '--accent-green' if row.strike_pct > 0 else '--accent-red' }})">{{ "%+.2f%%" | format(row.strike_pct) }}</span>
+                        <span style="color: var({{ '--accent-green' if row.strike_pct > 0 else '--accent-red' }})">{{ "%+.1f%%" | format(row.strike_pct) }}</span>
                         {% endif %}
                         {% else %}—{% endif %}
                     </td>
