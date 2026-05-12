@@ -387,7 +387,13 @@ async def run_dgi_screener(config, cosmos) -> dict:
         sym = entry["symbol"]
         if sym in previous_top:
             prev = previous_top[sym]
-            entry["days_on_list"] = prev.get("days_on_list", 0) + 1
+            # Only increment days_on_list when the date changes
+            prev_date = prev.get("last_seen_date", "")
+            if prev_date == today_str:
+                entry["days_on_list"] = prev.get("days_on_list", 1)
+            else:
+                entry["days_on_list"] = prev.get("days_on_list", 0) + 1
+            entry["last_seen_date"] = today_str
             entry["first_appeared"] = prev.get("first_appeared", run_date)
 
             # Build score_history: carry forward previous history
@@ -407,6 +413,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
             entry["score_history"] = prev_history[-MAX_SCORE_HISTORY:]
         else:
             entry["days_on_list"] = 1
+            entry["last_seen_date"] = today_str
             entry["first_appeared"] = run_date
             entry["score_history"] = [{"date": today_str, "score": entry["quality_score"]}]
             new_symbols.append(sym)
