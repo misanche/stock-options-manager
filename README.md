@@ -1,4 +1,21 @@
-# Stock Options Manager
+# 🧪 Option Income Lab
+
+> *Where boring dividends get interesting*
+
+## Philosophy
+
+The core strategy is **DGI (Dividend Growth Investing)** — building a portfolio of quality dividend stocks that pay you more every year. It's proven. It's reliable. It's also... boring.
+
+Option Income Lab makes DGI *interesting* by layering options strategies on top:
+
+- 🔍 **DGI Screener** → Find the best dividend growth stocks from the S&P 500
+- 💰 **Cash-Secured Puts** → Get paid to wait for stocks you want at prices you choose
+- 📈 **Covered Calls** → Squeeze extra income from stocks you already own
+- 🤖 **AI-Powered Monitoring** → Agents watch your positions 24/7, suggest rolls, flag risks
+
+The result: a DGI portfolio that generates income from **dividends AND option premiums** — with an AI copilot keeping watch while you sleep.
+
+---
 
 DGI-focused income acceleration platform — uses **Cash Secured Puts (CSP)** to acquire top dividend growth stocks at a discount, and **Covered Calls (CC)** to generate additional income on held DGI positions. A built-in **DGI Screener** identifies the best dividend growth candidates from a configurable stock universe (default: S&P 500), ranking them by a composite quality score combining fundamental strength and technical timing. Options trading analysis is powered by Microsoft Agent Framework with hybrid TradingView data fetching — `requests` + `BeautifulSoup` + TradingView scanner API for most data, Playwright (headless Chromium) only for options chain — fronted by an **in-memory cache layer** (`tv_cache.py`) with per-key TTL and async locking to eliminate redundant fetches across agents. All data — watchlists, positions, activities, reports, alerts, and DGI screener results — is stored in **Azure CosmosDB** (NoSQL) with a symbol-centric partition model.
 
@@ -892,20 +909,20 @@ The dashboard runs on `http://localhost:8000` by default (configurable in `confi
 Build the image (pre-installs Playwright + Chromium for options chain fetching — no Node.js needed):
 
 ```bash
-docker build -t stock-options-manager .
+docker build -t option-income-lab .
 ```
 
 Run with CosmosDB credentials:
 
 ```bash
-docker run -d --name stock-options-manager \
+docker run -d --name option-income-lab \
   -p 8000:8000 \
   -e AZURE_AI_PROJECT_ENDPOINT="https://your-project.services.ai.azure.com" \
   -e MODEL_DEPLOYMENT="gpt-5.1" \
   -e AZURE_OPENAI_API_KEY="your-api-key-here" \
   -e COSMOSDB_ENDPOINT="https://your-account.documents.azure.com:443/" \
   -e COSMOSDB_KEY="your-primary-key" \
-  stock-options-manager
+  option-income-lab
 ```
 
 | Variable | Purpose |
@@ -919,20 +936,20 @@ docker run -d --name stock-options-manager \
 View logs:
 
 ```bash
-docker logs -f stock-options-manager
+docker logs -f option-income-lab
 ```
 
 Pass flags (e.g. web-only mode):
 
 ```bash
-docker run -d --name stock-options-manager-web \
+docker run -d --name option-income-lab-web \
   -p 8000:8000 \
   -e AZURE_AI_PROJECT_ENDPOINT="..." \
   -e MODEL_DEPLOYMENT="gpt-5.1" \
   -e AZURE_OPENAI_API_KEY="your-api-key-here" \
   -e COSMOSDB_ENDPOINT="..." \
   -e COSMOSDB_KEY="..." \
-  stock-options-manager --web-only
+  option-income-lab --web-only
 ```
 
 ---
@@ -949,7 +966,7 @@ docker run -d --name stock-options-manager-web \
 
 ```bash
 # ── Resource names ───────────────────────────────────────────────────────────
-RESOURCE_GROUP="${RESOURCE_GROUP:-rg-stock-options-manager}"
+RESOURCE_GROUP="${RESOURCE_GROUP:-rg-option-income-lab}"
 LOCATION="${LOCATION:-eastus}"
 
 # CosmosDB
@@ -958,9 +975,9 @@ DATABASE_NAME="${DATABASE_NAME:-stock-options-manager}"
 CONTAINER_NAME="${CONTAINER_NAME:-symbols}"
 
 # Container Apps
-CONTAINER_ENV="${CONTAINER_ENV:-cae-stock-options-manager}"
-CONTAINER_APP="${CONTAINER_APP:-ca-stock-options-manager}"
-IMAGE="${IMAGE:-ghcr.io/dsanchor/stock-options-manager:latest}"
+CONTAINER_ENV="${CONTAINER_ENV:-cae-option-income-lab}"
+CONTAINER_APP="${CONTAINER_APP:-ca-option-income-lab}"
+IMAGE="${IMAGE:-ghcr.io/dsanchor/option-income-lab:latest}"
 
 # ── Credentials (fill these in) ─────────────────────────────────────────────
 AZURE_AI_PROJECT_ENDPOINT="${AZURE_AI_PROJECT_ENDPOINT:-your-project-endpoint}"

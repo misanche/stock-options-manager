@@ -157,7 +157,7 @@ def _format_time_dual_tz(dt: datetime, tz_str: str) -> str:
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Stock Options Manager Dashboard")
+app = FastAPI(title="Option Income Lab")
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")),
           name="static")
@@ -2275,7 +2275,7 @@ async def telegram_test(request: Request):
         import requests as req
         resp = req.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": "✅ Stock Options Manager — Telegram notifications are working!", "parse_mode": "HTML"},
+            json={"chat_id": chat_id, "text": "✅ Option Income Lab — Telegram notifications are working!", "parse_mode": "HTML"},
             timeout=10,
         )
         data = resp.json()
@@ -2749,7 +2749,7 @@ async def chat_api(request: Request):
                         else "No recent activities available.")
         
         system_prompt = (
-            "You are a stock options manager advisor. You have access to recent "
+            "You are an Option Income Lab advisor. You have access to recent "
             "analysis activities for the user's portfolio. Answer questions about "
             "positions, risks, and recommended actions based on this data.\n\n"
             f"Recent analysis data:\n{context_text}"

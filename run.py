@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified entry point for Stock Options Manager.
+Unified entry point for Option Income Lab.
 
   python run.py                  # web dashboard + scheduler
   python run.py --web-only       # web dashboard only
@@ -83,14 +83,14 @@ def _print_banner(host, port, cron, mode):
     print()
     print("══════════════════════════════════════════════════════════════════════")
     if mode == "both":
-        print(" Stock Options Manager — Web Dashboard + Scheduler")
+        print(" Option Income Lab — Web Dashboard + Scheduler")
         print(f" Dashboard: {url}")
         print(f" Cron:      {cron}")
     elif mode == "web":
-        print(" Stock Options Manager — Web Dashboard")
+        print(" Option Income Lab — Web Dashboard")
         print(f" Dashboard: {url}")
     elif mode == "scheduler":
-        print(" Stock Options Manager — Scheduler Only")
+        print(" Option Income Lab — Scheduler Only")
         print(f" Cron:      {cron}")
     print("══════════════════════════════════════════════════════════════════════")
     print()
@@ -101,7 +101,7 @@ def _print_banner(host, port, cron, mode):
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Stock Options Manager")
+    parser = argparse.ArgumentParser(description="Option Income Lab")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--web-only", action="store_true", help="Start web dashboard only (no scheduler)")
     group.add_argument("--scheduler-only", action="store_true", help="Start scheduler only (no web UI)")

@@ -1,1 +1,1 @@
-# Stock Options Manager Package
+# Option Income Lab Package

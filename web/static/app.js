@@ -1,4 +1,4 @@
-/* Stock Options Manager — Client-side JS */
+/* Option Income Lab — Client-side JS */
 
 // ── Clickable table rows ──
 document.addEventListener('DOMContentLoaded', function() {

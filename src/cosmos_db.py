@@ -1,4 +1,4 @@
-"""CosmosDB service layer for the stock-options-manager.
+"""CosmosDB service layer for Option Income Lab.
 
 Provides all database operations: symbol config CRUD, watchlist queries,
 position management, activity/alert write and read, and dashboard queries.

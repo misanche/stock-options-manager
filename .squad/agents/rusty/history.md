@@ -701,3 +701,23 @@ Added "Run DGI Screener" button to web dashboard with backing API. Pattern follo
 - README DGI section is self-contained but references related sections (CosmosDB Setup, Settings)
 - Provision script follows existing pattern: serverless active, provisioned commented, variable for container name
 - All container counts updated consistently (Architecture, Document Model, script header)
+
+### Per-Function Model Override System (2026-07)
+**Status:** ✅ Completed  
+**Scope:** Allow each agent/function to use a different model deployment, with fallback to the default `model_deployment`.
+
+**Changes:**
+- **config.yaml:** Added `azure.models` section with commented-out per-role keys (monitor_assessment, monitor_roll, supervisor, alpha, analysis, summary, report, chat, symbol_chat)
+- **src/config.py:** Added `model_for(role: str) -> str` method that reads from `azure.models.<role>` with fallback to `model_deployment`
+- **src/agent_runner.py:** Replaced single `self.client` with lazy per-model client cache via `_get_client(model)`. Added `model` param to all agent methods. Added backward-compatible `client` property.
+- **src/covered_call_agent.py, src/cash_secured_put_agent.py:** Pass `model`, `supervisor_model`, `alpha_model` to `run_symbol_agent`
+- **src/open_call_monitor_agent.py, src/open_put_monitor_agent.py:** Pass `assessment_model`, `roll_model`, `supervisor_model`, `alpha_model` to `run_position_monitor`
+- **src/report_agent.py:** Pass `model` to `run_report_agent`
+- **src/main.py:** Pass `model` to `run_summary_agent`
+- **web/app.py:** Three endpoints updated to use `Config().model_for('chat'|'symbol_chat')` for model resolution
+
+## Learnings
+- `AgentRunner._get_client()` caches clients per deployment name, so each unique model creates exactly one `AzureOpenAIChatClient`
+- The `client` property provides backward compatibility for any code referencing `self.client`
+- `web/app.py` chat endpoints use `AzureOpenAI` directly (not `AgentRunner`), so model override is applied to the `model` variable before the completion call
+- All model overrides are optional — omitting `azure.models` section entirely preserves existing behavior

@@ -596,7 +596,7 @@ class OptionsAgentScheduler:
 def main():
     """Entry point for the options agent scheduler."""
     print("="*70)
-    print(" Stock Options Manager Scheduler")
+    print(" Option Income Lab Scheduler")
     print(" Using Microsoft Agent Framework + Playwright")
     print("="*70)
     print()
