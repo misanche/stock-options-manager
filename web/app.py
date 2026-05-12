@@ -811,6 +811,8 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
                 "key": key,
                 "symbol": base_symbol,
                 "display": display_map.get(key, key),
+                "underlying_price": latest_by_key.get(key, {}).get(
+                    "underlying_price"),
                 "recent_activities": recent,
                 "risk_flags": latest_by_key.get(key, {}).get(
                     "risk_flags", []),
