@@ -790,10 +790,10 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
                 latest_by_key[key] = d
             recent_by_key.setdefault(key, []).append(d)
 
-        # Keep only last 3 activities per key (oldest→newest)
+        # Keep only the last activity per key
         for k, acts in recent_by_key.items():
             acts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-            recent_by_key[k] = list(reversed(acts[:3]))
+            recent_by_key[k] = acts[:1]
 
         rows = []
         for key, group in groups.items():
