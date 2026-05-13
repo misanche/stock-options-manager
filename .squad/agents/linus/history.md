@@ -48,6 +48,27 @@
 - Problem: Positions slightly ITM (price barely crosses strike) trigger ROLL, then revert to OTM and get WAIT on the next run — oscillating recommendations.
 - Fix: Added `## NEAR-ATM STABILITY BUFFER` section to both `tv_open_call_assessment_instructions.py` and `tv_open_put_assessment_instructions.py`, placed before ACTIVITY CRITERIA.
 - Stability zone: within 3% of strike on the ITM side. If technicals are favorable (Neutral/Sell oscillators for calls, Neutral/Buy for puts) and delta < 0.60, default to WAIT.
+
+### DGI Screener Payout Ratio Display Bug Fix (2026-05)
+- **Problem:** User reported seeing raw decimal values like "0,3" (0.3) and "0,333" (0.333) for payout_ratio in the detail modal instead of formatted percentages like "30%" and "33.3%".
+- **Investigation findings:**
+  1. yfinance `payoutRatio` returns decimal ratio (0.333 = 33.3%) — tested with ZTS, MSFT, JNJ, AAPL, KO
+  2. Cosmos stores it correctly as decimal (internal convention: 0-1 range)
+  3. `dgi_screener.py` line 127 stores raw: `info.get("payoutRatio") or 0`
+  4. stockanalysis_fetcher also returns decimal: `float(m.group(1)) / 100.0` for "33%" → 0.33
+  5. `dgi_metrics.py` scoring functions expect decimal (`_payout_safety_score`, `max_payout: 0.75`)
+  6. `dgi_analysis.html` formats correctly: `"%.0f%%"|format(m.payout_ratio * 100)` ✅
+  7. **Bug source:** `dgi_screener.html` detail modal's `buildSection()` function had field-specific formatting logic AFTER generic `fmtVal()` call — the number was already converted to a string, so the formatting conditions couldn't apply ❌
+- **Root cause:** Logic error in execution order — `fmtVal(v)` converted the numeric value to a string with `toLocaleString()`, then the subsequent `if (typeof v === 'number' && k === 'payout_ratio')` check always failed because `v` was still the original number but `displayVal` was already a string.
+- **Fix:** Reordered the formatting logic in `dgi_screener.html` lines 422-447 to apply field-specific formatting FIRST, then fall back to generic `fmtVal()` only for unmatched fields:
+  - Changed from: `displayVal = fmtVal(v); if (typeof v === 'number' && ...)` (broken)
+  - Changed to: `if/else if` chain with field-specific formatting, then `else { displayVal = fmtVal(v); }` (correct)
+  - Percentage fields: `payout_ratio` (1 decimal), `dividend_yield`, `dividend_cagr_5y`, `roe` (2 decimals) — multiply by 100, add % suffix
+  - Market cap: `>= 1e9` → `$X.XXB`, `>= 1e6` → `$X.XXM`
+  - Price: `current_price` → `$X.XX`
+  - Ratio: `debt_to_equity` → `X.XX` (2 decimals, no suffix)
+- **Validation:** Confirmed the if/else if chain now correctly applies formatting before string conversion. Internal storage remains decimal (0-1 range) for percentages.
+- **Key pattern:** When applying conditional formatting, ensure the condition checks happen BEFORE the value is converted to a string. If you call a generic formatter first, subsequent type checks will fail. Use if/else if chains where specific cases come first and generic fallback comes last.
 - Override conditions: delta > 0.60, Strong directional momentum against position, earnings imminent, ex-div risk (calls), DTE < 7 and ITM.
 - Added anti-flip-flop rule to INTERPRETING PREVIOUS ACTIVITY LOG: maintain WAIT if delta change < 0.10 and price change < 1% since last reading.
 - Modified ROLL triggers #1 and #2 to require momentum (not just proximity) and respect the stability zone.

@@ -1431,3 +1431,130 @@ Yahoo Finance's dividend payment series produces unreliable `years_consecutive_i
 **Files Changed:** `src/dgi_screener.py`
 
 ---
+
+### Dual Threshold Lines on Radar Chart
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-11  
+**Status:** ✅ Implemented
+
+The radar chart previously showed a single red "Ideal Minimum" threshold line. Now displays two uniform threshold lines:
+- **Mínimo (65)** — red dashed line, uniform 65 on all axes.
+- **Ideal (80)** — green dashed line, uniform 80 on all axes.
+
+Uniform approach works because weights sum to 1.0: setting all sub-scores to N yields a weighted total of N.
+
+**API Change:** `calculate_quality_score_detailed()` now returns `"ideal_thresholds"` in addition to `"minimum_thresholds"`.
+
+**Files Changed:** `src/dgi_metrics.py`, `web/templates/dgi_analysis.html`
+
+---
+
+### yfinance dividendYield Normalization
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-07-25  
+**Status:** ✅ Implemented
+
+MSFT was displaying ~88% dividend yield in DGI screener modal (actual yield ~0.8%).
+
+**Root Cause:** yfinance `dividendYield` returns values in percentage form (0.88 = 0.88%, 2.42 = 2.42%). The normalization `if raw_yield > 1: raw_yield /= 100` only caught yields above 1%, leaving sub-1% stocks (MSFT 0.88, AAPL 0.37) in percentage form while downstream (scoring, categorization, filters) expected decimal.
+
+**Downstream Effects:**
+- Filter modal: `0.88 * 100 = 88.00%`
+- Scoring: `0.88 / 0.05 * 100 = 1760`, clamped to 100 — always max score
+- Categorization: `0.88 >= 0.04` → wrongly classified as "High Yield"
+
+**Decision:** Always divide `dividendYield` by 100 (unconditional). Verified against 6 stocks: yfinance `dividendYield` is consistently percentage-form across all yield ranges.
+
+**Files Changed:** `src/dgi_metrics.py`
+
+---
+
+### DGI Screener Payout Ratio Display Fix
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-13  
+**Status:** ✅ Implemented
+
+The DGI screener detail modal displayed raw decimal values for `payout_ratio` ("0.3", "0.333") instead of formatted percentages ("30%", "33.3%").
+
+**Investigation:**
+1. yfinance returns `payoutRatio` as decimal (0.333 = 33.3%) — tested with ZTS, MSFT, JNJ, AAPL, KO
+2. CosmosDB stores correctly as decimal (internal convention: 0-1 range for ratios)
+3. Scoring functions expect decimal (`_payout_safety_score`, `max_payout: 0.75`)
+4. Analysis page formats correctly (`dgi_analysis.html` uses `* 100`)
+5. Bug location: `dgi_screener.html` detail modal uses generic `buildSection()` which applies `fmtVal()` to all fields — doesn't know about percentage vs. dollar vs. ratio fields
+
+**Root Cause:** Formatting logic applied in wrong order. `fmtVal()` converted values to strings before field-specific numeric checks could run, causing conditionals to fail.
+
+**Fix:** Reordered formatting logic in `web/templates/dgi_screener.html` (lines 422-447):
+- **Field-specific formatting FIRST** (percentage, market cap, price, ratio) while values are still numeric
+- **Generic fallback** to `fmtVal()` for other fields
+
+**Formatted Fields:** payout_ratio, dividend_yield, dividend_cagr_5y, roe, debt_to_equity, market_cap, current_price
+
+**Files Changed:** `web/templates/dgi_screener.html`
+
+---
+
+### Premium=0.0 — Root Cause & Diagnostic Fix
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-11  
+**Status:** 🔧 Applied — needs runtime verification
+
+All trading agents returning premium=0.0. Options chain data confirmed present by user. Systemic across all agent types.
+
+**Two Most Likely Causes:**
+1. **TradingView endpoint migration:** `_OPTIONS_SCAN_URLS` only matched `scan2` endpoints. If TradingView migrated to `scan`, `screener`, or `scan3`, no API responses would be intercepted. DOM fallback fails → parser fails → agents get raw text → output premium=0.0.
+2. **TradingView field name change:** If field names changed (e.g., "bid" → "option_bid"), parser stores bid=None, agents see null, output premium=0.0.
+
+**Changes:**
+- Broadened URL matching to cover scan/scan2/scan3/screener + added fallback for any scanner.tradingview.com response with "symbols-options"
+- Added field name aliases to `_FIELD_MAP`
+- Added diagnostic logging at ERROR level for missed scanner URLs and missing bid/ask fields
+- Fixed broken tests in `test_options_chain_parser.py` (tests used `[0]` indexing but parser was refactored to strike-keyed dict format at commit 7be7d82)
+
+**Key Pattern:** When intercepting third-party API responses by URL matching, URL patterns MUST be broadly defined and logged when they miss. Third parties change endpoints without notice. Always have fallback matcher and diagnostic logging.
+
+**Files Changed:** `src/tv_data_fetcher.py`, `test_options_chain_parser.py`
+
+---
+
+### DGI Screener Observability Standards
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-11  
+**Status:** ✅ Implemented
+
+User triggered a DGI screener run from web UI. Run appeared active but CosmosDB was never updated. Root cause: background thread error handlers lacked `exc_info=True`, making failures invisible.
+
+**Decision:**
+1. **All background thread error handlers must include `exc_info=True`** — without full tracebacks, async failures are undebuggable.
+2. **All CosmosDB write operations must have INFO-level logging before AND after** — "Saving N entries..." / "✅ All N entries saved".
+3. **The `container is None` guard in `cosmos_db.py` should be audited** — it silently skips writes with only a WARNING. For DGI screener writes, this is data loss and should log at ERROR level.
+
+**Key Pattern:** Background-threaded operations need explicit error context. CosmosDB silent-skip patterns should log at ERROR when they cause data loss, not WARNING.
+
+**Applies to:** All background-threaded operations (DGI screener, future scheduled tasks). Rusty should review other `cosmos_db.py` methods for similar silent-skip patterns.
+
+**Files Changed:** `src/dgi_screener.py`, `src/cosmos_db.py`
+
+---
+
+### Per-Function Model Override System
+**Author:** Rusty (Backend Dev)  
+**Date:** 2026-07  
+**Status:** ✅ Implemented
+
+All agents used a single `model_deployment` config value. Different agents have different complexity/cost profiles and benefit from different models.
+
+**Decision:**
+- Added `azure.models` section to `config.yaml` with per-role keys
+- `Config.model_for(role)` returns override or falls back to `model_deployment`
+- `AgentRunner` lazily caches one `AzureOpenAIChatClient` per unique deployment name
+- All overrides optional — backward compatible with existing configs
+
+**Role Keys:** `monitor_assessment`, `monitor_roll`, `supervisor`, `alpha`, `analysis`, `summary`, `report`, `chat`, `symbol_chat`
+
+**Backward Compatibility:** No breaking changes to existing env vars or configs.
+
+**Files Changed:** `config.yaml`, `src/config.py`, `src/agent_runner.py`
+
+---

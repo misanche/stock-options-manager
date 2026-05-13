@@ -420,9 +420,35 @@
                 continue;
             }
             var label = k.replace(/_/g, ' ');
+            var displayVal;
+            
+            // Apply field-specific formatting BEFORE generic fmtVal
+            // Format percentage fields (stored as decimal, display as %)
+            if (typeof v === 'number' && (k === 'payout_ratio' || k === 'dividend_yield' || k === 'dividend_cagr_5y' || k === 'roe')) {
+                displayVal = (v * 100).toFixed(k === 'payout_ratio' ? 1 : 2) + '%';
+            }
+            // Format debt_to_equity as ratio
+            else if (k === 'debt_to_equity' && typeof v === 'number') {
+                displayVal = v.toFixed(2);
+            }
+            // Format market cap
+            else if (k === 'market_cap' && typeof v === 'number' && v >= 1e9) {
+                displayVal = '$' + (v / 1e9).toFixed(2) + 'B';
+            } else if (k === 'market_cap' && typeof v === 'number' && v >= 1e6) {
+                displayVal = '$' + (v / 1e6).toFixed(2) + 'M';
+            }
+            // Format price
+            else if ((k === 'current_price') && typeof v === 'number') {
+                displayVal = '$' + v.toFixed(2);
+            }
+            // Default formatting for everything else
+            else {
+                displayVal = fmtVal(v);
+            }
+            
             html += '<div class="modal-field" style="margin-bottom:0.4rem;">';
             html += '<label>' + label + '</label>';
-            html += '<div style="font-family:var(--font-mono);font-size:0.9rem;">' + fmtVal(v) + '</div>';
+            html += '<div style="font-family:var(--font-mono);font-size:0.9rem;">' + displayVal + '</div>';
             html += '</div>';
         }
         html += '</div></div></div>';
