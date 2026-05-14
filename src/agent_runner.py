@@ -1611,7 +1611,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         handoff_json=handoff_json,
                         filtered_chain_text=filtered_chain_text,
                         analysis_ts=analysis_ts,
-                        symbol=symbol,
+                        full_symbol=symbol,
                         model=roll_model,
                     )
                     # Use Phase 2 output as the final result
