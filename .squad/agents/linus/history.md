@@ -1858,3 +1858,10 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 - Fix: changed the cooldown check from `supervisor_view` to `alpha_view`. The `alpha_view` field only exists when a full supervisor+alpha review cycle has previously run, which is the correct cooldown signal.
 - Both code paths (analysis ~line 1130, position monitor ~line 1887) use the same `_detect_prolonged_wait` method, so the single fix covers both.
 - Key takeaway: when designing cooldown logic, the gating field must represent the action being cooled down (alpha review), not a ubiquitous side-effect (supervisor review).
+
+### Dashboard Icon Indicator Pattern (2026-07)
+- Activity list indicators are rendered in `web/templates/dashboard.html` (~line 187) and `web/templates/symbol_detail.html` (~line 439), just before the activity badge `<span>`.
+- Pattern: conditional `{% if item.field %}` → `<span class="X-indicator" title="...">EMOJI</span>` → `{% endif %}`.
+- Current indicators: 📢 `.alert-indicator` (alerts), ⚠️ `.data-error-indicator` (data errors), 🤔 `.review-indicator` (supervisor challenges), 🧠 `.alpha-indicator` (alpha advisor).
+- CSS for indicators lives in `web/static/style.css` — `.alert-indicator` near line 386, `.review-indicator` near line 201, `.alpha-indicator` right after `.alert-indicator`.
+- Dashboard uses `item.` prefix, symbol_detail uses `d.` prefix for the same fields.

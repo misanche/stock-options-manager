@@ -2779,3 +2779,32 @@ If/when codebase matures and these constants become "legacy" (e.g., migration to
 **Scope:** Single field change in `_detect_prolonged_wait()` (line 676). Surgical fix affecting only cooldown gating.
 
 **Risk:** Low.
+
+---
+
+### Decision: Alpha Advisor indicator icon (Linus)
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-07  
+**Status:** Implemented  
+**Commit:** feat: add alpha advisor indicator icon to activity lists
+
+**Problem:** The Alpha Advisor's alternative perspective was invisible in activity lists. Users had to click into details to discover that Alpha had reviewed an activity. Other indicators (📢 alerts, 🤔 supervisor challenges) were visible at a glance.
+
+**Decision:** Add 🧠 brain emoji indicator for activities with `alpha_view` field in `dashboard.html` and `symbol_detail.html` activity lists. Follow the existing pattern: conditional check → span with class + title tooltip → emoji.
+
+**Implementation:**
+- `web/templates/dashboard.html` (~line 187): Added indicator before activity badge
+- `web/templates/symbol_detail.html` (~line 439): Same indicator pattern with `d.` prefix
+- `web/static/style.css`: Added `.alpha-indicator` class with blue/purple tint
+
+**Indicator Set Now Complete:**
+- 📢 `.alert-indicator` (alerts)
+- ⚠️ `.data-error-indicator` (data errors)
+- 🤔 `.review-indicator` (supervisor challenges)
+- 🧠 `.alpha-indicator` (alpha advisor) ← NEW
+
+**Convention Established:**
+New activity indicators should follow the same pattern: conditional check → span with class + title tooltip → emoji. CSS goes in `style.css` near the other indicator classes.
+
+**Risk:** Low. Follows existing patterns, no logic changes, purely presentational.
