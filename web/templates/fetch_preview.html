@@ -118,7 +118,7 @@
                 card.innerHTML =
                     '<h3>' + labels[key] + '</h3>' +
                     '<div class="resource-meta">' +
-                        formatSize(r.size) + ' · ' + r.duration_seconds.toFixed(1) + 's' +
+                        formatSize(r.size) + ' · ' + (r.duration_seconds != null ? r.duration_seconds.toFixed(1) + 's' : '') +
                     '</div>' +
                     '<pre class="resource-pre">' + escapeHtml(r.text) + '</pre>';
                 resultsDiv.appendChild(card);

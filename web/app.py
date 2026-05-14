@@ -1431,7 +1431,10 @@ async def api_fetch_preview(request: Request, symbol: str):
         return JSONResponse({"error": "Data provider not initialized"}, status_code=503)
 
     try:
+        import time as _time
+        t0 = _time.monotonic()
         data = await provider.fetch_all(symbol.upper(), force_refresh=True)
+        elapsed = _time.monotonic() - t0
     except Exception as e:
         logger.exception("Fetch preview failed for %s", symbol)
         return JSONResponse({"error": f"Fetch failed: {e}"}, status_code=500)
@@ -1443,6 +1446,7 @@ async def api_fetch_preview(request: Request, symbol: str):
             "text": text,
             "size": len(text),
             "cached": False,
+            "duration_seconds": round(elapsed, 2),
         }
 
     return JSONResponse({

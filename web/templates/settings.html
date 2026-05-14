@@ -273,7 +273,7 @@
                     + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">'
                     + '<strong>' + labels[key] + '</strong>'
                     + '<span class="mono" style="font-size:0.8rem; opacity:0.6;">'
-                    + formatSize(r.size) + ' chars · ' + r.duration_seconds.toFixed(1) + 's'
+                    + formatSize(r.size) + ' chars · ' + (r.duration_seconds != null ? r.duration_seconds.toFixed(1) + 's' : '')
                     + (hasError ? ' · <span style="color:var(--accent-red, #e23b4a);">ERROR</span>' : '')
                     + '</span></div>'
                     + '<pre style="background:var(--bg,#111); border:1px solid var(--border, #2d2d35); border-radius:4px; padding:0.75rem; max-height:350px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:0.78rem; line-height:1.35; margin:0;">'
