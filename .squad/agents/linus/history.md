@@ -1794,3 +1794,10 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 **Naming pattern:** Variable names (e.g., `TV_SUMMARY_INSTRUCTIONS`) kept as-is for now — string constants are low-touch and renaming would ripple through many files for marginal gain.
 
 **Impact:** Codebase now accurately reflects yfinance-only architecture; no lingering TradingView naming artifacts in strategy logic layer.
+
+### Phase 5 — Instruction Content TradingView→yfinance (2026-05, Task)
+- Verified all 9 instruction files already had TradingView references replaced (43 replacements) by prior commit 895f157.
+- 5 additional files (roll, alpha, supervisor, summary) had no TradingView refs — no changes needed.
+- Key replacements: TradingView→Yahoo Finance, Playwright→yfinance, "browser tools"→"data fetching tools", "TradingView provides RSI..."→"computed via pandas-ta".
+- Trading logic, thresholds, DTE rules all preserved unchanged. Variable names (TV_*) kept for import stability.
+- All 96 tests pass. Decision doc written to inbox.
