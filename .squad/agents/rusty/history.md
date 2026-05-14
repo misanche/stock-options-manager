@@ -22,6 +22,8 @@
 - Per-symbol notification toggles (2026-03-31): `telegram_notifications_enabled` field
 - Playwright locator refactor (2026-03-31): Targeted "Fundamentals and stats" extraction
 - JSON format hints (2026-03-31): Added parenthetical notes to 4 instruction files
+- Market hours detection (2026-05-14): Switched from calendar rules to live MSFT ATM call probe; 5min cache, conservative fallback
+- Options chain merge (2026-05-14): In-memory cache of yfinance chains during market open; TV fallback merges with cache, preserving longer-dated expirations during closure
 
 ## Recent Tasks
 
