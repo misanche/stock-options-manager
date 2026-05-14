@@ -7,6 +7,26 @@
 - **MCP:** iflow-mcp_ferdousbhai_investor-agent 1.6.3
 - **Description:** Two periodic trading agents for covered call and cash-secured put sell signals. Local runtime, configurable polling, stock symbols from files, decision logs, sell signal alerts.
 
+## Core Context
+
+### DGI Screener Architecture & Scope (2026-05)
+- Scope simplified: Removed CSP Recommender LLM agent; kept manual "Quick Analysis" + "Add to Watchlist" buttons
+- Top 20 DGI candidates with technical timing indicators (RSI, SMA, Bollinger Bands)
+- MVP: Daily scheduler, yfinance data source, CosmosDB storage, web dashboard UI
+- Phases: Phase 1 (Screener MVP 3-4d) → Phase 2 (Dashboard + buttons 2-3d) → Phase 3 (Refinement 1-2d)
+
+### Contrarian Agent Architecture (2026-07)
+- 4 agent types × valid decisions: 16 decision-specific playbooks
+- Anti-noise rules: WEAK self-assessment for solid decisions, forbid arguments against risk management
+- Parameterized instruction functions enable context-specific customization while maintaining single source of truth
+- Agent output schema validation rejects invalid combinations (e.g., open_put + ROLL_UP)
+
+### Position Management Guardrails (2026-07)
+- Hard 45 DTE cap for new positions (enforce in 6 places: Time Frame, Theta, Earnings gate, KEY PRINCIPLE, DTE Priority, WAIT triggers)
+- Near-ATM stability buffer: 3% zone, WAIT on favorable technicals + delta < 0.60 to prevent oscillation
+- ROLL_OUT guardrail: Restrict to near-ATM positions, ≤5 DTE, no directional signal (force ROLL_UP/DOWN_AND_OUT when strike needs change)
+- Bare ROLL prevention: Enumerate valid actions explicitly, reject category names
+
 ## Learnings
 
 ### 2026-05-10: DGI Screener Scope Simplification — CSP Recommender Removed

@@ -7,6 +7,25 @@
 - **MCP:** iflow-mcp_ferdousbhai_investor-agent 1.6.3
 - **Description:** Two periodic trading agents for covered call and cash-secured put sell signals. Local runtime, configurable polling, stock symbols from files, decision logs, sell signal alerts.
 
+## Core Context
+
+### Phase 4a Deployment Automation (2026-03-28)
+- Provisioning script (`provision_cosmosdb.sh`): idempotent CosmosDB setup with custom indexing policy
+- Migration script (`migrate_to_cosmosdb.py`): Data import from local logs + txt files with integrity checks
+- Dockerfile: Updated for cloud deployment (removed local volume mounts, added scripts)
+- README: Architecture docs, env var table, Docker run examples, CosmosDB setup guide
+
+### CosmosDB Unified Schema Migration (2026-04-01)
+- 4-phase migration (`migrate_cosmos_events.py`): Export backup → Transform doc schema → Write unified events → Validate
+- Features: `--dry-run` mode, `--restore` rollback capability, orphaned record handling, duplicate resolution
+- Transformation: Merge alert docs into parent activities, strip prefixes, resolve timestamp collisions
+- Pattern: Idempotent scripts with dry-run, backup capability, progressive validation
+
+### Anti-403 Test Suite (2026-04-06)
+- 28-pass test suite for per-symbol session isolation, exponential backoff recovery, warmup behavior
+- Key patterns: Session scoping per symbol (not global), retry with backoff, config-driven settings
+- Edge case: `tv_403` flag unreachable in some code paths (dead code in exception handler)
+
 ## Learnings
 
 ### Phase 4a — Provisioning, Dockerfile, README (2026-03-28)
