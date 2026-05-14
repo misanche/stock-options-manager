@@ -541,9 +541,9 @@ class YFinanceDataProvider:
             if strike is None or pd.isna(strike):
                 continue
 
-            bid = float(row.get("bid", 0) or 0)
-            ask = float(row.get("ask", 0) or 0)
-            iv = float(row.get("impliedVolatility", 0) or 0)
+            bid = 0.0 if _is_nan(row.get("bid")) else float(row.get("bid", 0) or 0)
+            ask = 0.0 if _is_nan(row.get("ask")) else float(row.get("ask", 0) or 0)
+            iv = 0.0 if _is_nan(row.get("impliedVolatility")) else float(row.get("impliedVolatility", 0) or 0)
 
             # Compute Greeks
             greeks = self.greeks.compute(flag, current_price, strike, T, iv)
@@ -572,9 +572,9 @@ class YFinanceDataProvider:
                 "theta": greeks["theta"],
                 "vega": greeks["vega"],
                 "rho": greeks["rho"],
-                "volume": int(row.get("volume", 0) or 0),
-                "openInterest": int(row.get("openInterest", 0) or 0),
-                "lastPrice": float(row.get("lastPrice", 0) or 0),
+                "volume": int(row.get("volume", 0) or 0) if not _is_nan(row.get("volume")) else 0,
+                "openInterest": int(row.get("openInterest", 0) or 0) if not _is_nan(row.get("openInterest")) else 0,
+                "lastPrice": float(row.get("lastPrice", 0) or 0) if not _is_nan(row.get("lastPrice")) else 0.0,
                 "lastTradeDate": ltd_str,
                 "inTheMoney": bool(row.get("inTheMoney", False)),
                 "expiration": exp_key,
@@ -587,6 +587,17 @@ class YFinanceDataProvider:
 # ======================================================================
 # Helper
 # ======================================================================
+
+import math
+
+def _is_nan(value) -> bool:
+    """Check if a value is NaN (handles None, float NaN, numpy NaN)."""
+    if value is None:
+        return True
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
 
 def _add_field(d: dict, key: str, label: str, value, formatted=None):
     """Add a field to a fundamentals dict if value is not None."""
