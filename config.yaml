@@ -44,15 +44,15 @@ options_chain_scheduler:
   enabled: true
   cron: "0 * * * *"  # Every hour
 
-# Anti-bot detection settings for TradingView data fetching
-tradingview:
-  request_delay_min: 1.0   # Minimum seconds between requests (default: 1.0)
-  request_delay_max: 3.0   # Maximum seconds between requests (default: 3.0)
-  # Note: Actual delay is randomized within this range to simulate human behavior
-  warmup_enabled: false      # Visit TradingView homepage before fetching to establish cookies
-  max_403_retries: 3         # Max retry attempts on 403 with session refresh + backoff
-  retry_delays: [5, 15, 45]  # Backoff delays in seconds between 403 retries
-  randomize_symbols: true    # Shuffle symbol order to vary access patterns
+# yfinance data provider settings
+yfinance:
+  cache_ttl: 300             # Cache TTL in seconds (default: 5 minutes)
+  options_chain:
+    min_dte: 7               # Minimum days to expiration for options chain
+    max_dte: 90              # Maximum days to expiration for options chain
+  rate_limit:
+    calls_per_second: 2      # Max yfinance API calls per second
+  randomize_symbols: true    # Shuffle symbol order to vary processing
 
 dgi_screener:
   enabled: true

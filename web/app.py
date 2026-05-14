@@ -232,6 +232,14 @@ async def init_cosmos(app_instance):
 @app.on_event("startup")
 async def startup():
     await init_cosmos(app)
+    # Initialize yfinance provider singleton
+    try:
+        from src.yfinance_data_provider import create_provider
+        app.state.yf_provider = create_provider()
+        logger.info("YFinance data provider initialized successfully")
+    except Exception as e:
+        logger.exception("YFinance provider init failed")
+        app.state.yf_provider = None
 
 
 def _get_cosmos(request: Request):
@@ -1063,7 +1071,7 @@ async def symbol_detail_page(request: Request, symbol: str):
 
 
 # ===========================================================================
-# Page Routes — Fetch Preview (raw TradingView data)
+# Page Routes — Fetch Preview (raw market data)
 # ===========================================================================
 
 @app.get("/symbols/{symbol}/fetch-preview", response_class=HTMLResponse)
@@ -1093,7 +1101,7 @@ async def symbol_report_api(request: Request, symbol: str):
     """Generate a comprehensive position/situation report for a symbol.
 
     Uses the ReportAgent (same pattern as other agents) to produce a
-    structured markdown report from cached TradingView data + CosmosDB
+    structured markdown report from cached market data + CosmosDB
     activities/alerts.
     """
     symbol = symbol.upper()
@@ -1194,7 +1202,7 @@ async def symbol_options_chain_page(request: Request, symbol: str):
 
 @app.get("/api/symbols/{symbol}/options-chain")
 async def api_symbol_options_chain(request: Request, symbol: str):
-    """Return parsed option chain data from the TV cache."""
+    """Return parsed option chain data from yfinance provider."""
     try:
         cosmos = _get_cosmos(request)
     except RuntimeError as e:
@@ -1205,65 +1213,33 @@ async def api_symbol_options_chain(request: Request, symbol: str):
         return JSONResponse({"error": f"Symbol {symbol} not found"},
                             status_code=404)
 
-    from src.tv_cache import get_tv_cache
-    cache = get_tv_cache()
-    # Cache key uses exchange-symbol format (e.g. "NASDAQ-MSFT") to match
-    # how the scheduler and fetch_all store the data.
-    cache_key = doc.get("exchange", "NASDAQ") + "-" + doc["symbol"]
-    entry = cache.get(cache_key, "options_chain")
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"error": "Data provider not initialized"}, status_code=503)
 
-    # Fallback: if no cached data, fetch live and populate cache
-    if entry is None or not entry.data:
-        try:
-            from src.tv_data_fetcher import create_fetcher
-            from src.config import Config
-            config = Config()
-            full_sym = doc.get("exchange", "NASDAQ") + ":" + doc["symbol"]
-            async with create_fetcher(config) as fetcher:
-                raw_data = await fetcher.fetch_options_chain(full_sym)
-                if raw_data and not raw_data.startswith("[ERROR"):
-                    # Validate the data is parseable before caching
-                    from src.options_chain_parser import parse_options_chain as _test_parse
-                    test_result = _test_parse(raw_data, symbol.upper())
-                    if test_result["calls"] or test_result["puts"]:
-                        cache.set(cache_key, "options_chain", raw_data,
-                                  {"source": "live_fallback"})
-                        entry = cache.get(cache_key, "options_chain")
-                    else:
-                        logger.warning("Live fetch returned unparseable data for %s (length=%d)",
-                                       symbol, len(raw_data))
-        except Exception as e:
-            logger.exception("Live options chain fetch failed for %s", symbol)
-            return JSONResponse(
-                {"error": f"Failed to fetch options chain: {e}", "symbol": symbol.upper()},
-                status_code=500,
-            )
-
-    if entry is None or not entry.data:
+    try:
+        data = await provider.fetch_all(symbol.upper())
+        raw = data.get("options_chain", "{}")
+        result = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception as e:
+        logger.exception("Options chain fetch failed for %s", symbol)
         return JSONResponse(
-            {"error": "No options chain data available. Try running a full analysis first, or wait for the options chain scheduler.",
-             "symbol": symbol.upper()},
-            status_code=404,
+            {"error": f"Failed to fetch options chain: {e}", "symbol": symbol.upper()},
+            status_code=500,
         )
 
-    raw = entry.data
-    from src.options_chain_parser import parse_options_chain
-    result = parse_options_chain(raw, symbol.upper())
-
-    if not result["calls"] and not result["puts"]:
-        logger.error("Failed to parse options chain for %s (raw length=%d, first 500 chars=%s)",
-                      symbol, len(raw) if raw else 0, repr(raw[:500]) if raw else "empty")
+    if not result.get("calls") and not result.get("puts"):
         return JSONResponse(
-            {"error": "Failed to parse options chain data", "symbol": symbol.upper()},
+            {"error": "No options chain data available.",
+             "symbol": symbol.upper()},
             status_code=404,
         )
 
     return JSONResponse({
         "symbol": symbol.upper(),
-        "timestamp": result["timestamp"],
-        "cache_age_seconds": round(time.time() - entry.timestamp, 1),
-        "calls": result["calls"],
-        "puts": result["puts"],
+        "timestamp": result.get("timestamp", ""),
+        "calls": result.get("calls", {}),
+        "puts": result.get("puts", {}),
     })
 
 
@@ -1284,33 +1260,31 @@ async def api_debug_agent_chain(request: Request, symbol: str,
         return JSONResponse({"error": f"Symbol {symbol} not found"},
                             status_code=404)
 
-    from src.tv_cache import get_tv_cache
-    from src.options_chain_parser import (
-        parse_options_chain, filter_options_chain_by_type,
+    from src.options_chain_filters import (
+        filter_options_chain_by_type,
         filter_options_chain_by_delta,
         filter_options_chain_for_position, filter_options_chain_by_roll_direction,
-        format_roll_candidates_table, OPTIONS_CHAIN_SCHEMA_DESCRIPTION,
+        format_roll_candidates_table,
     )
+    from src.yfinance_data_provider import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
     import json as _json
 
-    cache = get_tv_cache()
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"error": "Data provider not initialized"}, status_code=503)
+
     sym_upper = symbol.upper()
-    cache_key = doc.get("exchange", "NASDAQ") + "-" + sym_upper
-    entry = cache.get(cache_key, "options_chain")
 
-    if entry is None or not entry.data:
+    try:
+        data = await provider.fetch_all(sym_upper)
+        raw = data.get("options_chain", "{}")
+        structured = _json.loads(raw) if isinstance(raw, str) else raw
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to fetch: {e}", "symbol": sym_upper}, status_code=500)
+
+    if not structured.get("calls") and not structured.get("puts"):
         return JSONResponse(
-            {"error": "No cached options chain data available. Run an analysis or wait for the options chain scheduler.",
-             "symbol": sym_upper},
-            status_code=404,
-        )
-
-    raw = entry.data
-    structured = parse_options_chain(raw, sym_upper)
-
-    if not structured["calls"] and not structured["puts"]:
-        return JSONResponse(
-            {"error": "Failed to parse options chain data", "symbol": sym_upper},
+            {"error": "No options chain data available", "symbol": sym_upper},
             status_code=404,
         )
 
@@ -1344,19 +1318,18 @@ async def api_debug_agent_chain(request: Request, symbol: str,
         "text": OPTIONS_CHAIN_SCHEMA_DESCRIPTION + "\n" + _json.dumps(delta_filtered, indent=2),
     }
 
-    # --- Underlying price (from cached technicals JSON) ---
+    # --- Underlying price (from technicals data) ---
     underlying_price = 0.0
     underlying_price_source = "not available"
-    tech_entry = cache.get(cache_key, "technicals")
-    if tech_entry and tech_entry.data:
-        try:
-            tech_data = _json.loads(tech_entry.data) if isinstance(tech_entry.data, str) else tech_entry.data
-            px = tech_data.get("price")
-            if px is not None:
-                underlying_price = float(px)
-                underlying_price_source = "technicals cache"
-        except (ValueError, TypeError, AttributeError):
-            pass
+    try:
+        tech_raw = data.get("technicals", "{}")
+        tech_data = _json.loads(tech_raw) if isinstance(tech_raw, str) else tech_raw
+        px = tech_data.get("price")
+        if px is not None:
+            underlying_price = float(px)
+            underlying_price_source = "yfinance technicals"
+    except (ValueError, TypeError, AttributeError):
+        pass
 
     # --- Stage 2: Position filter (±15 strikes) ---
     position_filtered = None
@@ -1429,7 +1402,6 @@ async def api_debug_agent_chain(request: Request, symbol: str,
     result = {
         "symbol": sym_upper,
         "option_type": option_type,
-        "cache_age_seconds": round(time.time() - entry.timestamp, 1),
         "pipeline": pipeline,
     }
     if position_context:
@@ -1440,7 +1412,7 @@ async def api_debug_agent_chain(request: Request, symbol: str,
 
 @app.get("/api/symbols/{symbol}/fetch-preview")
 async def api_fetch_preview(request: Request, symbol: str):
-    """Fetch raw TradingView data for a symbol and return as JSON.
+    """Fetch raw market data for a symbol and return as JSON.
     
     Always forces a fresh fetch (debug endpoint).
     """
@@ -1454,77 +1426,70 @@ async def api_fetch_preview(request: Request, symbol: str):
         return JSONResponse({"error": f"Symbol {symbol} not found"},
                             status_code=404)
 
-    full_symbol = doc["exchange"] + "-" + doc["symbol"]
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"error": "Data provider not initialized"}, status_code=503)
 
-    from src.tv_data_fetcher import create_fetcher
-    from src.tv_cache import get_tv_cache
-    from src.config import Config
     try:
-        config = Config()
-        async with create_fetcher(config) as fetcher:
-            data = await fetcher.fetch_all(full_symbol,
-                                           force_refresh=True,
-                                           cache=get_tv_cache())
-            stats = fetcher.last_fetch_stats
+        import time as _time
+        t0 = _time.monotonic()
+        data = await provider.fetch_all(symbol.upper(), force_refresh=True)
+        elapsed = _time.monotonic() - t0
     except Exception as e:
-        logger.exception("Fetch preview failed for %s", full_symbol)
+        logger.exception("Fetch preview failed for %s", symbol)
         return JSONResponse({"error": f"Fetch failed: {e}"}, status_code=500)
 
     resources = {}
     for key in ("overview", "technicals", "forecast", "dividends", "options_chain"):
         text = data.get(key, "")
-        st = stats.get(key, {})
         resources[key] = {
             "text": text,
-            "size": st.get("size", len(text)),
-            "duration_seconds": st.get("duration", 0),
-            "error": st.get("error", False),
-            "cached": st.get("cached", False),
+            "size": len(text),
+            "cached": False,
+            "duration_seconds": round(elapsed, 2),
         }
 
     return JSONResponse({
-        "symbol": full_symbol,
+        "symbol": symbol.upper(),
         "resources": resources,
-        "cached_resources": data.get("cached_resources", []),
     })
 
 
 @app.get("/api/cache/status")
-async def cache_status():
-    """Return TradingView cache statistics."""
-    from src.tv_cache import get_tv_cache
-    cache = get_tv_cache()
-    info = cache.stats()
-    # Add per-symbol detail
-    detail = {}
-    for sym in info["symbols"]:
-        entries = cache.get_all(sym)
-        detail[sym] = {
-            res: {
-                "size": entry.fetch_stats.get("size", len(entry.data)),
-                "age_seconds": round(time.time() - entry.timestamp, 1),
-            }
-            for res, entry in entries.items()
-        }
-    info["detail"] = detail
+async def cache_status(request: Request):
+    """Return yfinance provider cache statistics."""
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"total_entries": 0, "symbols": []})
+    cache = provider._cache
+    symbols = list(cache.keys())
+    info = {
+        "total_entries": len(symbols),
+        "symbols": symbols,
+        "detail": {
+            sym: {"age_seconds": round(time.monotonic() - entry["timestamp"], 1)}
+            for sym, entry in cache.items()
+        },
+    }
     return JSONResponse(info)
 
 
 @app.delete("/api/cache")
 async def cache_clear(request: Request):
-    """Clear TradingView cache.  Pass ``{"symbol": "NYSE-MO"}`` to clear
+    """Clear yfinance provider cache. Pass ``{"symbol": "MSFT"}`` to clear
     a single symbol, or empty body to clear everything."""
-    from src.tv_cache import get_tv_cache
-    cache = get_tv_cache()
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"cleared": "none"})
     try:
         body = await request.json()
     except Exception:
         body = {}
     sym = body.get("symbol")
     if sym:
-        cache.clear(sym)
+        provider._cache.pop(sym, None)
         return JSONResponse({"cleared": sym})
-    cache.clear_all()
+    provider._cache.clear()
     return JSONResponse({"cleared": "all"})
 
 # ===========================================================================
@@ -2146,19 +2111,19 @@ async def settings_runtime_page(request: Request):
 
 
 @app.post("/api/debug/clear-cache")
-async def api_debug_clear_cache():
-    """Clear all TradingView cache entries."""
-    from src.tv_cache import get_tv_cache
-    cache = get_tv_cache()
-    stats = cache.stats()
-    cleared = stats["total_entries"]
-    cache.clear_all()
+async def api_debug_clear_cache(request: Request):
+    """Clear all yfinance provider cache entries."""
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider is None:
+        return JSONResponse({"success": True, "cleared": 0})
+    cleared = len(provider._cache)
+    provider._cache.clear()
     return JSONResponse({"success": True, "cleared": cleared})
 
 
 @app.get("/settings/debug", response_class=HTMLResponse)
 async def settings_debug_page(request: Request):
-    """Debug page — TradingView fetch and CosmosDB diagnostics."""
+    """Debug page — data fetch and CosmosDB diagnostics."""
     cosmos = getattr(request.app.state, "cosmos", None)
     
     # CosmosDB connection info
@@ -2168,9 +2133,15 @@ async def settings_debug_page(request: Request):
     cosmos_status = "Connected" if cosmos else "Not connected"
     cosmos_error = getattr(request.app.state, "cosmos_error", None)
     
-    # Cache stats
-    from src.tv_cache import get_tv_cache
-    cache_stats = get_tv_cache().stats()
+    # Cache stats from yfinance provider
+    provider = getattr(request.app.state, "yf_provider", None)
+    if provider:
+        cache_stats = {
+            "total_entries": len(provider._cache),
+            "symbols": list(provider._cache.keys()),
+        }
+    else:
+        cache_stats = {"total_entries": 0, "symbols": []}
     
     # Get symbols for debug dropdown
     symbols = []
@@ -2553,10 +2524,10 @@ async def chat_page(request: Request):
 
 @app.post("/api/chat/fetch-symbol")
 async def fetch_symbol_data(request: Request):
-    """Fetch TradingView data for a symbol without saving to database.
+    """Fetch market data for a symbol without saving to database.
     
     Uses cache by default.  Pass ``"refresh": true`` in the JSON body
-    to force a fresh fetch from TradingView.
+    to force a fresh fetch.
     """
     body = await request.json()
     symbol = body.get("symbol", "").strip().upper()
@@ -2576,37 +2547,19 @@ async def fetch_symbol_data(request: Request):
             status_code=400
         )
     
-    # Format as MARKET-SYMBOL (e.g., NYSE-AAPL)
-    full_symbol = f"{market}-{symbol}"
-    
     try:
-        # Import and use TradingViewFetcher
-        import sys
-        sys.path.insert(0, str(PROJECT_ROOT / "src"))
-        from tv_data_fetcher import create_fetcher
-        from tv_cache import get_tv_cache
-        from config import Config
-        
-        config = Config()
-        async with create_fetcher(config) as fetcher:
-            data = await fetcher.fetch_all(full_symbol,
-                                           force_refresh=force_refresh,
-                                           cache=get_tv_cache())
+        provider = getattr(request.app.state, "yf_provider", None)
+        if provider is None:
+            return JSONResponse({"error": "Data provider not initialized"}, status_code=503)
+
+        data = await provider.fetch_all(symbol, force_refresh=force_refresh)
             
-            if data.get("tv_403", False):
-                return JSONResponse(
-                    {"error": "TradingView returned 403 (rate limit or block). Please try again later."},
-                    status_code=403
-                )
-            
-            return JSONResponse({
-                "symbol": symbol,
-                "market": market,
-                "option_type": option_type,
-                "full_symbol": full_symbol,
-                "data": data,
-                "cached_resources": data.get("cached_resources", []),
-            })
+        return JSONResponse({
+            "symbol": symbol,
+            "market": market,
+            "option_type": option_type,
+            "data": data,
+        })
             
     except Exception as e:
         logger.error("Error fetching symbol data: %s", e, exc_info=True)
@@ -2736,7 +2689,7 @@ async def chat_api(request: Request):
             context_parts.append(data["dividends"])
         
         if "options_chain" in data and data["options_chain"]:
-            from src.options_chain_parser import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
+            from src.yfinance_data_provider import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
             context_parts.append("\n=== OPTIONS CHAIN ===")
             context_parts.append(OPTIONS_CHAIN_SCHEMA_DESCRIPTION)
             context_parts.append(data["options_chain"])
@@ -2749,10 +2702,10 @@ async def chat_api(request: Request):
             sys.path.insert(0, str(PROJECT_ROOT / "src"))
             
             if option_type == "call":
-                from tv_open_call_chat_instructions import TV_OPEN_CALL_CHAT_INSTRUCTIONS
+                from open_call_chat_instructions import TV_OPEN_CALL_CHAT_INSTRUCTIONS
                 instructions = TV_OPEN_CALL_CHAT_INSTRUCTIONS
             else:  # put
-                from tv_open_put_chat_instructions import TV_OPEN_PUT_CHAT_INSTRUCTIONS
+                from open_put_chat_instructions import TV_OPEN_PUT_CHAT_INSTRUCTIONS
                 instructions = TV_OPEN_PUT_CHAT_INSTRUCTIONS
             
             system_prompt = f"{instructions}\n\n{context_text}"
@@ -2760,9 +2713,9 @@ async def chat_api(request: Request):
             # Normal chat mode after first analysis
             system_prompt = (
                 f"You are a friendly and knowledgeable options analyst discussing {option_type} options for {market}:{symbol}. "
-                "Provide conversational, human-friendly responses. Use the TradingView data provided below to answer questions about "
+                "Provide conversational, human-friendly responses. Use the market data provided below to answer questions about "
                 "the stock's price, technicals, earnings, dividends, and options. Avoid JSON or structured output — talk naturally.\n\n"
-                f"TradingView Data:\n{context_text}"
+                f"Market Data:\n{context_text}"
             )
     
     else:
@@ -2844,21 +2797,23 @@ async def symbol_chat_page(request: Request, symbol: str):
 
 async def _build_symbol_context(symbol: str, cosmos, 
                                 preferences: dict = None,
-                                force_refresh: bool = False) -> dict:
-    """Build context data for a symbol (CosmosDB + TradingView).
+                                force_refresh: bool = False,
+                                provider=None) -> dict:
+    """Build context data for a symbol (CosmosDB + yfinance).
     
     Args:
         symbol: Stock symbol
         cosmos: CosmosDB client
-        preferences: Dict with keys: tradingview, positions, activities (all bool)
-        force_refresh: When True, bypass TradingView cache.
+        preferences: Dict with keys: market_data (market data), positions, activities (all bool)
+        force_refresh: When True, bypass cache.
+        provider: YFinanceDataProvider instance (optional, creates one if not provided)
 
     Returns dict with keys: context, exchange, display_name, cached_resources.
     """
     # Default to all enabled for backward compatibility
     if preferences is None:
         preferences = {
-            'tradingview': True,
+            'market_data': True,
             'positions': True,
             'activities': True
         }
@@ -2909,23 +2864,16 @@ async def _build_symbol_context(symbol: str, cosmos,
             logger.warning("symbol_chat: failed to load activities: %s", exc)
             context_parts.append("(Error loading activities from CosmosDB)")
 
-    # Only include TradingView data if requested
-    if preferences.get('tradingview', True):
+    # Only include market data if requested
+    if preferences.get('market_data', True):
         try:
-            from src.tv_data_fetcher import create_fetcher
-            from src.tv_cache import get_tv_cache
-            from src.config import Config
+            if provider is None:
+                from src.yfinance_data_provider import create_provider
+                provider = create_provider()
 
-            config = Config()
-            full_symbol = f"{exchange}-{symbol}"
-            async with create_fetcher(config) as fetcher:
-                tv_data = await fetcher.fetch_all(full_symbol,
-                                                  force_refresh=force_refresh,
-                                                  cache=get_tv_cache())
+            market_data = await provider.fetch_all(symbol, force_refresh=force_refresh)
 
-            cached_resources = tv_data.get("cached_resources", [])
-
-            tv_sections = []
+            sections = []
             for section_key, section_label in [
                 ("overview", "Overview"),
                 ("technicals", "Technicals"),
@@ -2933,19 +2881,19 @@ async def _build_symbol_context(symbol: str, cosmos,
                 ("dividends", "Dividends"),
                 ("options_chain", "Options Chain"),
             ]:
-                content = tv_data.get(section_key, "")
+                content = market_data.get(section_key, "")
                 if content and not content.startswith("[ERROR"):
                     if section_key == "options_chain":
-                        from src.options_chain_parser import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
+                        from src.yfinance_data_provider import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
                         content = OPTIONS_CHAIN_SCHEMA_DESCRIPTION + "\n" + content
-                    tv_sections.append(
-                        f"\n--- TradingView {section_label} ---\n{content}")
+                    sections.append(
+                        f"\n--- {section_label} ---\n{content}")
 
-            if tv_sections:
-                context_parts.append("\n".join(tv_sections))
+            if sections:
+                context_parts.append("\n".join(sections))
         except Exception as exc:
-            logger.warning("symbol_chat: TradingView fetch failed: %s", exc)
-            context_parts.append("(Live TradingView data unavailable)")
+            logger.warning("symbol_chat: market data fetch failed: %s", exc)
+            context_parts.append("(Live market data unavailable)")
 
     context_text = ("\n".join(context_parts) if context_parts
                     else "No context data available.")
@@ -2968,7 +2916,7 @@ def _build_symbol_system_prompt(symbol: str, exchange: str,
         f"{symbol} ({exchange}:{symbol}).\n"
         f"You have access to:\n"
         f"1. Recent analysis activities for this symbol\n"
-        f"2. Live market data from TradingView "
+        f"2. Live market data "
         f"(overview, technicals, forecast, dividends, options chain)\n"
         f"3. Current positions and watchlist status\n\n"
         f"Answer questions about this symbol's options opportunities, "
@@ -2981,9 +2929,9 @@ def _build_symbol_system_prompt(symbol: str, exchange: str,
 
 @app.post("/api/symbols/{symbol}/chat/context")
 async def symbol_chat_context(request: Request, symbol: str):
-    """Pre-fetch all heavy context (CosmosDB + TradingView) for a symbol.
+    """Pre-fetch all heavy context (CosmosDB + market data) for a symbol.
     
-    Pass ``"refresh": true`` in the JSON body to bypass the TradingView cache.
+    Pass ``"refresh": true`` in the JSON body to bypass the cache.
     """
     symbol = symbol.upper()
     cosmos = getattr(request.app.state, "cosmos", None)
@@ -2998,8 +2946,10 @@ async def symbol_chat_context(request: Request, symbol: str):
         force_refresh = False
 
     try:
+        provider = getattr(request.app.state, "yf_provider", None)
         result = await _build_symbol_context(symbol, cosmos, preferences,
-                                             force_refresh=force_refresh)
+                                             force_refresh=force_refresh,
+                                             provider=provider)
         return JSONResponse(result)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -3031,7 +2981,8 @@ async def symbol_chat_api(request: Request, symbol: str):
                 pass
     else:
         cosmos = getattr(request.app.state, "cosmos", None)
-        result = await _build_symbol_context(symbol, cosmos)
+        provider = getattr(request.app.state, "yf_provider", None)
+        result = await _build_symbol_context(symbol, cosmos, provider=provider)
         context_text = result["context"]
         exchange = result["exchange"]
 

@@ -15,10 +15,10 @@ async def run_open_call_monitor(config, runner: AgentRunner,
         runner: Initialized AgentRunner instance
         cosmos: CosmosDBService instance
         context_provider: ContextProvider for activity history
-        symbol: Optional symbol to filter positions (e.g., 'NYSE-AAPL')
+        symbol: Optional symbol to filter positions (e.g., 'AAPL')
     """
-    from .tv_open_call_assessment_instructions import get_open_call_assessment_instructions
-    from .tv_open_call_roll_instructions import get_open_call_roll_instructions
+    from .open_call_assessment_instructions import get_open_call_assessment_instructions
+    from .open_call_roll_instructions import get_open_call_roll_instructions
     assessment_instructions = get_open_call_assessment_instructions()
     roll_instructions = get_open_call_roll_instructions()
 
@@ -45,34 +45,34 @@ async def run_open_call_monitor(config, runner: AgentRunner,
         if not call_symbols:
             print("No active call positions — skipping OpenCallMonitor")
             return
-        if getattr(config, 'tradingview_randomize_symbols', True):
+        if getattr(config, 'yfinance_randomize_symbols', True):
             random.shuffle(call_symbols)
 
     total = sum(len(s["_active_positions"]) for s in call_symbols)
     print(f"Monitoring {total} open call position(s)")
 
-    from .tv_data_fetcher import create_fetcher
+    from .yfinance_data_provider import create_provider
 
+    provider = create_provider(getattr(config, 'yfinance_config', None))
     for sym_doc in call_symbols:
-        async with create_fetcher(config) as fetcher:
-            for pos in sym_doc["_active_positions"]:
-                await runner.run_position_monitor(
-                    name="OpenCallMonitor",
-                    symbol=sym_doc["symbol"],
-                    exchange=sym_doc["exchange"],
-                    position=pos,
-                    agent_type="open_call_monitor",
-                    cosmos=cosmos,
-                    context_provider=context_provider,
-                    max_activity_entries=config.max_activity_entries,
-                    fetcher=fetcher,
-                    assessment_instructions=assessment_instructions,
-                    roll_instructions=roll_instructions,
-                    assessment_model=config.model_for('monitor_assessment'),
-                    roll_model=config.model_for('monitor_roll'),
-                    supervisor_model=config.model_for('supervisor'),
-                    alpha_model=config.model_for('alpha'),
-                )
+        for pos in sym_doc["_active_positions"]:
+            await runner.run_position_monitor(
+                name="OpenCallMonitor",
+                symbol=sym_doc["symbol"],
+                exchange=sym_doc["exchange"],
+                position=pos,
+                agent_type="open_call_monitor",
+                cosmos=cosmos,
+                context_provider=context_provider,
+                max_activity_entries=config.max_activity_entries,
+                fetcher=provider,
+                assessment_instructions=assessment_instructions,
+                roll_instructions=roll_instructions,
+                assessment_model=config.model_for('monitor_assessment'),
+                roll_model=config.model_for('monitor_roll'),
+                supervisor_model=config.model_for('supervisor'),
+                alpha_model=config.model_for('alpha'),
+            )
 
     print(f"\n{'='*60}")
     print(f"Completed OpenCallMonitor monitoring")

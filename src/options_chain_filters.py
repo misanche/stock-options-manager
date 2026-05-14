@@ -1,269 +1,46 @@
-"""Shared parser for TradingView options chain data.
+"""Standalone filter pipeline for structured options chain data.
 
-Extracts structured, agent-friendly option contract data from raw
-TradingView scanner API responses stored in the cache layer.
+Works on the unified dict format produced by yfinance provider — keyed by expiration (YYYYMMDD) then strike (str float).
+No dependency on options_chain_parser.py.
 """
 
 import datetime
-import json
 import logging
-import re
-from collections import defaultdict
-from typing import Any, Dict, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Reusable schema description — import and prepend wherever options chain
-# JSON is injected into agent prompts, chat contexts, or reports.
+# Roll-direction constants
 # ---------------------------------------------------------------------------
-OPTIONS_CHAIN_SCHEMA_DESCRIPTION = """\
-OPTIONS CHAIN FORMAT:
-The options chain is a JSON object with the following structure:
-{
-  "symbol": "<TICKER>",
-  "timestamp": "<ISO 8601 fetch time>",
-  "calls": { "<YYYYMMDD>": { "<strike>": {contract}, ... } },
-  "puts":  { "<YYYYMMDD>": { "<strike>": {contract}, ... } }
-}
-Calls and puts are grouped by expiration date (YYYYMMDD key). Each expiration
-contains a dictionary of contracts keyed by strike price (e.g. "475.0", "472.5").
-Contract fields:
-  - opra_symbol: OPRA identifier (e.g. "OPRA:MSFT260427C475.0")
-  - strike: Strike price in dollars
-  - bid: Best bid price — what you RECEIVE when you SELL (open or close) this contract
-  - ask: Best ask price — what you PAY when you BUY (open or close) this contract
-  - mid: Theoretical mid-price (model-derived fair value, NOT necessarily (bid+ask)/2)
-  - iv: Implied volatility (decimal, e.g. 0.364 = 36.4%)
-  - delta: Delta (0 to 1 for calls, -1 to 0 for puts)
-  - gamma: Gamma (rate of delta change)
-  - theta: Theta (daily time decay, negative value)
-  - vega: Vega (sensitivity to volatility)
-  - rho: Rho (sensitivity to interest rates)
-  - currency: Currency code (usually "USD")
-  - expiration: Expiration date as YYYYMMDD string
-  - option_type: "call" or "put"
-  - bid_iv / ask_iv: Bid/ask implied volatilities (optional)
 
-PREMIUM CALCULATION (CRITICAL — read carefully):
-All strategies in this application SELL (write) options. When SELLING an option:
-  - premium_per_contract = bid (you sell at the bid price — what the buyer pays you)
-  - total_premium = bid × 100 (each contract = 100 shares)
-  - premium_pct (covered call) = (bid / current_stock_price) × 100
-  - premium_pct (cash-secured put) = (bid / strike) × 100
-  - annualized_return = premium_pct × (365 / DTE)
-Do NOT use 'ask' or 'mid' as the premium received. The 'bid' is always the
-realistic premium a seller collects. Use 'mid' only for theoretical/fair-value
-comparisons, never as actual premium income.
-
-ROLL OPERATIONS (buying back + selling new):
-  - buyback_cost = ask of your CURRENT contract (you BUY to close → pay the ask)
-  - new_premium  = bid of the NEW target contract (you SELL to open → receive the bid)
-  - net_credit   = new_premium - buyback_cost (positive = you collect, negative = you pay)
-
-HOW TO LOOK UP A CONTRACT:
-  Example: find the premium for selling an MSFT $475 call expiring 2026-04-27:
-  1. calls["20260427"]["475.0"]["bid"] → that is the premium you receive when selling
-  Example: find the buyback cost for your current MSFT $470 call expiring 2026-04-18:
-  1. calls["20260418"]["470.0"]["ask"] → that is the cost to buy back (close) the position
-  Direct key access — no searching required.
-
-DATA INTEGRITY (MANDATORY):
-  Every price you report (bid, ask, premium, buyback cost) MUST be the EXACT value
-  from a contract in this JSON data. NEVER estimate, interpolate, round, or fabricate prices.
-  State the full path and value: e.g., calls["20260427"]["475.0"]["ask"] = 3.00
-  If the key path does not exist in the chain, state "contract not found in chain" — do NOT invent a price.
-
-  ⚠️ COMMON ERROR: When looking up a contract, ensure the expiration key (YYYYMMDD) matches
-  your intended expiration date. The chain contains MULTIPLE expirations — do NOT accidentally
-  read the bid/ask from a different expiration's entry for the same strike.
-"""
-
-# Canonical field names we expose on each contract.
-# Keys are lowercased API field names → canonical names.
-# Extra aliases handle possible TradingView endpoint migrations.
-_FIELD_MAP = {
-    "ask": "ask",
-    "bid": "bid",
-    "currency": "currency",
-    "delta": "delta",
-    "expiration": "expiration",
-    "gamma": "gamma",
-    "iv": "iv",
-    "option-type": "option_type",
-    "option_type": "option_type",
-    "pricescale": "pricescale",
-    "rho": "rho",
-    "root": "root",
-    "strike": "strike",
-    "theoprice": "mid",  # theoPrice → mid
-    "theo_price": "mid",
-    "midprice": "mid",
-    "mid": "mid",
-    "theta": "theta",
-    "vega": "vega",
-    "bid_iv": "bid_iv",
-    "ask_iv": "ask_iv",
-    # Common alternative field names from various TradingView API versions
-    "option_bid": "bid",
-    "option_ask": "ask",
-    "option-bid": "bid",
-    "option-ask": "ask",
-    "bid_price": "bid",
-    "ask_price": "ask",
-    "implied_volatility": "iv",
-    "implied-volatility": "iv",
+# Roll types and their directional semantics (same for calls and puts)
+_ROLL_STRIKE_FILTERS = {
+    "ROLL_DOWN":         "below",
+    "ROLL_UP":           "above",
+    "ROLL_OUT":          "same",       # ±1 adjacent strike
+    "ROLL_UP_AND_OUT":   "above_eq",
+    "ROLL_DOWN_AND_OUT": "below_eq",
 }
 
+# Rolls containing "OUT" require strictly later expirations
+_STRICT_LATER_ROLLS = {"ROLL_OUT", "ROLL_UP_AND_OUT", "ROLL_DOWN_AND_OUT"}
 
-def parse_options_chain(raw: str, symbol: str = "") -> dict:
-    """Parse raw TradingView options chain data into agent-friendly structured format.
 
-    Returns dict with keys: symbol, timestamp, calls, puts
-    - calls/puts are dicts keyed by expiration date (YYYYMMDD string)
-    - Each expiration contains a list of option contracts with key-value fields
-    - Returns empty calls/puts dicts if parsing fails
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
 
-    Uses the ``fields`` array from each JSON response to build a dynamic
-    index→name mapping so the parser is resilient to field-order changes.
-    """
-    if not raw:
-        return {"symbol": symbol, "timestamp": None, "calls": {}, "puts": {}}
+def _fmt_exp(exp: str) -> str:
+    """Convert YYYYMMDD → YYYY-MM-DD for display."""
+    if len(exp) == 8 and exp.isdigit():
+        return f"{exp[:4]}-{exp[4:6]}-{exp[6:]}"
+    return exp
 
-    # Strip header prefix if present
-    raw = re.sub(r"^OPTIONS CHAIN DATA\s*\([^)]*\)\s*:\s*\n*", "", raw).strip()
 
-    # Parse JSON — try whole string first, fall back to splitting on blank lines
-    parsed_blocks: list[dict] = []
-
-    def _try_parse(text: str):
-        try:
-            obj = json.loads(text)
-            if isinstance(obj, dict):
-                parsed_blocks.append(obj)
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    _try_parse(raw)
-    if not parsed_blocks:
-        for block in re.split(r"\n{2,}", raw):
-            block = block.strip()
-            if block:
-                _try_parse(block)
-
-    if not parsed_blocks:
-        logger.warning("options_chain_parser: no valid JSON found (raw length=%d)", len(raw))
-        return {"symbol": symbol, "timestamp": None, "calls": {}, "puts": {}}
-
-    calls: Dict[str, dict] = defaultdict(dict)
-    puts: Dict[str, dict] = defaultdict(dict)
-    data_time: Optional[Any] = None
-
-    for parsed in parsed_blocks:
-        items = parsed.get("symbols", parsed.get("data", []))
-        if "time" in parsed and data_time is None:
-            data_time = parsed["time"]
-
-        # Build dynamic field index map from the response's "fields" array
-        fields_arr = parsed.get("fields", [])
-        if fields_arr:
-            idx_map = {}
-            unmapped_fields = []
-            for i, name in enumerate(fields_arr):
-                lowered = name.lower()
-                canon = _FIELD_MAP.get(lowered, lowered.replace("-", "_"))
-                idx_map[canon] = i
-                if lowered not in _FIELD_MAP:
-                    unmapped_fields.append(name)
-            # Log unmapped fields — critical for debugging field name changes
-            if unmapped_fields:
-                logger.info(
-                    "options_chain_parser: unmapped fields from API: %s "
-                    "(mapped fields: %s)",
-                    unmapped_fields, [f for f in fields_arr if f.lower() in _FIELD_MAP],
-                )
-            # Warn if critical price fields are missing
-            if "bid" not in idx_map or "ask" not in idx_map:
-                logger.error(
-                    "options_chain_parser: CRITICAL — 'bid' and/or 'ask' not found "
-                    "in field mapping! API fields: %s → mapped: %s. "
-                    "Premium extraction WILL FAIL.",
-                    fields_arr, dict(idx_map),
-                )
-        else:
-            # Fallback to hardcoded positions (legacy)
-            idx_map = {
-                "ask": 0, "bid": 1, "currency": 2, "delta": 3,
-                "expiration": 4, "gamma": 5, "iv": 6, "option_type": 7,
-                "pricescale": 8, "rho": 9, "root": 10, "strike": 11,
-                "mid": 12, "theta": 13, "vega": 14, "bid_iv": 15, "ask_iv": 16,
-            }
-
-        opt_type_idx = idx_map.get("option_type")
-        exp_idx = idx_map.get("expiration")
-        if opt_type_idx is None or exp_idx is None:
-            logger.warning("options_chain_parser: missing option_type/expiration in fields")
-            continue
-
-        for item in items:
-            f = item.get("f")
-            if not f or len(f) <= max(opt_type_idx, exp_idx):
-                continue
-
-            option_type = f[opt_type_idx]
-            expiration = str(f[exp_idx]) if f[exp_idx] is not None else None
-            if not expiration or option_type not in ("call", "put"):
-                continue
-
-            def _get(key: str):
-                i = idx_map.get(key)
-                return f[i] if i is not None and i < len(f) else None
-
-            opt = {
-                "opra_symbol": item.get("s", ""),
-                "strike": _get("strike"),
-                "bid": _get("bid"),
-                "ask": _get("ask"),
-                "mid": _get("mid"),
-                "iv": _get("iv"),
-                "delta": _get("delta"),
-                "gamma": _get("gamma"),
-                "theta": _get("theta"),
-                "vega": _get("vega"),
-                "rho": _get("rho"),
-                "currency": _get("currency"),
-                "expiration": expiration,
-                "option_type": option_type,
-            }
-
-            bid_iv = _get("bid_iv")
-            ask_iv = _get("ask_iv")
-            if bid_iv is not None:
-                opt["bid_iv"] = bid_iv
-            if ask_iv is not None:
-                opt["ask_iv"] = ask_iv
-
-            strike_key = str(float(opt["strike"])) if opt["strike"] is not None else "0.0"
-            if option_type == "call":
-                calls[expiration][strike_key] = opt
-            else:
-                puts[expiration][strike_key] = opt
-
-    # Sort strikes within each expiration, then sort expiration keys chronologically
-    for bucket in (calls, puts):
-        for exp in bucket:
-            bucket[exp] = dict(sorted(bucket[exp].items(), key=lambda kv: float(kv[0])))
-
-    sorted_calls = dict(sorted(calls.items()))
-    sorted_puts = dict(sorted(puts.items()))
-
-    return {
-        "symbol": symbol,
-        "timestamp": data_time,
-        "calls": sorted_calls,
-        "puts": sorted_puts,
-    }
-
+# ---------------------------------------------------------------------------
+# Filter functions
+# ---------------------------------------------------------------------------
 
 def filter_options_chain_by_type(chain: dict, option_type: str) -> dict:
     """Filter a parsed options chain to keep only calls or only puts.
@@ -366,23 +143,6 @@ def filter_options_chain_by_delta(
         "puts": _filter_bucket(chain.get("puts", {}), *put_delta_range),
         **({"current_position": chain["current_position"]} if "current_position" in chain else {}),
     }
-
-
-# ---------------------------------------------------------------------------
-# Roll-direction filtering — narrows chain for Phase 2 based on roll type
-# ---------------------------------------------------------------------------
-
-# Roll types and their directional semantics (same for calls and puts)
-_ROLL_STRIKE_FILTERS = {
-    "ROLL_DOWN":         "below",
-    "ROLL_UP":           "above",
-    "ROLL_OUT":          "same",       # ±1 adjacent strike
-    "ROLL_UP_AND_OUT":   "above_eq",
-    "ROLL_DOWN_AND_OUT": "below_eq",
-}
-
-# Rolls containing "OUT" require strictly later expirations
-_STRICT_LATER_ROLLS = {"ROLL_OUT", "ROLL_UP_AND_OUT", "ROLL_DOWN_AND_OUT"}
 
 
 def filter_options_chain_by_roll_direction(
@@ -488,17 +248,6 @@ def filter_options_chain_by_roll_direction(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Pre-computed roll candidate table for Phase 2
-# ---------------------------------------------------------------------------
-
-def _fmt_exp(exp: str) -> str:
-    """Convert YYYYMMDD → YYYY-MM-DD for display."""
-    if len(exp) == 8 and exp.isdigit():
-        return f"{exp[:4]}-{exp[4:6]}-{exp[6:]}"
-    return exp
-
-
 def format_roll_candidates_table(
     chain: dict,
     current_strike: float,
@@ -570,7 +319,7 @@ def format_roll_candidates_table(
         bid_str = f"${current_contract.get('bid', 'N/A')}" if current_contract.get('bid') is not None else "N/A"
         ask_str = f"${current_contract.get('ask', 'N/A')}" if current_contract.get('ask') is not None else "N/A"
         delta_str = f"{current_contract.get('delta', 'N/A')}" if current_contract.get('delta') is not None else "N/A"
-        theta_str = f"{current_contract.get('theta', 'N/A')}" if current_contract.get('theta') is not None else "N/A"
+        theta_str = f"${current_contract.get('theta', 'N/A')}" if current_contract.get('theta') is not None else "N/A"
         lines.append(f"  Bid: {bid_str} | Ask: {ask_str} | Delta: {delta_str} | Theta: {theta_str}")
     if buyback_cost is not None:
         lines.append(f"  Buyback cost (ask): ${buyback_cost:.2f} per share (${buyback_cost * 100:.2f} per contract)")

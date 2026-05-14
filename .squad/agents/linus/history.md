@@ -1700,3 +1700,115 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - Fix: unconditionally divide `dividendYield` by 100. No conditional needed.
 - The display template must multiply stored decimal values by 100 for percentage display (consistent with how CAGR was already handled).
 - Filter modal line 459 `(fc.actual * 100)` was already correct for decimal — it was producing 88% because the input was 0.88 (percentage) not 0.0088 (decimal).
+
+### yfinance Feasibility Analysis for Full Data Source Replacement (2026-05)
+- **yfinance can replace TradingView + StockAnalysis.com for ~90% of data needs.** Comprehensive analysis written to `.squad/decisions/inbox/linus-yfinance-feasibility.md`.
+- **Options chain is the biggest win:** yfinance provides 23+ expiration dates (vs. TV's ~5), plus volume, open interest, and last trade date. Eliminates Playwright browser interception entirely.
+- **Fundamentals/dividends/forecast:** 95%+ coverage via `ticker.info` (150+ keys), `ticker.analyst_price_targets`, `ticker.recommendations_summary`. All TradingView scanner fields have direct equivalents.
+- **Technicals:** yfinance provides raw OHLCV only — all oscillators/MAs must be computed. `dgi_metrics.py` already computes RSI/SMA/Bollinger. Remaining ~12 indicators (Stochastic, CCI, ADX, MACD, Williams %R, etc.) are standard formulas or can use `pandas-ta` library.
+- **Greeks are the main gap:** yfinance option chains include IV but NOT delta/gamma/theta/vega/rho. Must compute via Black-Scholes using `py_vollib` or scipy (~50 lines). Inputs (S, K, T, r, sigma) all available from yfinance data.
+- **Key risk:** Losing StockAnalysis.com cross-check for dividend growth years. Our `calculate_years_consecutive_increases()` from Yahoo dividend series is the fallback but was known to be less reliable than SA.
+- **Elimination wins:** No Playwright (~50MB Chromium), no anti-bot detection (User-Agent rotation, 403 recovery, warmup pages), no HTML parsing fragility, no TradingView endpoint migrations (the scan/scan2/scan3 breakage that caused premium=0.0 becomes impossible).
+
+---
+
+## 2026-05-14 — yfinance Feasibility Deep-Dive
+
+**Session:** 20260514T0539Z  
+**Outcome:** Comprehensive feasibility analysis delivered to decisions.md
+
+### Analysis Results
+- **Verdict:** yfinance can replace TradingView and StockAnalysis.com for ~90% of data needs
+- **Options Chains:** 23+ expiration dates vs TradingView's ~5 (major win)
+- **Greeks Gap:** IV available, delta/gamma/theta/vega/rho computed via Black-Scholes
+- **Technicals Gap:** OSC signals lost but already computed locally (RSI/SMA/Bollinger in dgi_metrics.py)
+- **Impact:** Eliminates all scraping fragility (Playwright, anti-bot detection, 403s)
+
+### Deliverable
+- Document: `decisions.md` → yfinance Feasibility Deep-Dive section
+- Verdict: ✅ Fully feasible, proceed with architecture transition
+
+### Phase 1 Foundation Modules (2026-07)
+- Built 3 new modules for the yfinance transition (Danny's plan):
+  1. **`src/greeks_calculator.py`** (~130 lines): Black-Scholes Greeks computation. Uses py_vollib when available, falls back to manual scipy norm.cdf implementation. Risk-free rate lazily fetched from ^TNX via yfinance, cached. Handles edge cases (T≈0, σ≈0). Returns theta as daily decay (/365), vega per 1% IV (/100).
+  2. **`src/technicals_calculator.py`** (~330 lines): Computes all oscillators (RSI, Stoch, CCI, ADX, AO, Mom, MACD, Williams %R, BBPower, UO) and MAs (SMA/EMA 10-200, Ichimoku BL, VWMA, Hull). Signal logic ported exactly from tv_data_fetcher.py `_oscillator_signal()` and `_ma_signal()`. Uses pandas-ta when installed, manual pandas/numpy fallback. Previous bar values (for signal logic) computed via iloc[-2]/-3. Output dict matches `_build_technicals_dict()` structure.
+  3. **`src/yfinance_data_provider.py`** (~400 lines): Orchestrator replacing tv_data_fetcher. `fetch_all(symbol)` returns dict with 5 JSON strings: overview, technicals, forecast, dividends, options_chain. Options chain builds hierarchical YYYYMMDD→strike→contract structure with computed Greeks. Handles dividendYield percentage-form correctly (yfinance returns 0.88 meaning 0.88%, not 88%). Updated `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` with new fields (contractSymbol, volume, openInterest, liquidity/staleness guidance).
+- Updated `requirements.txt` with `py-vollib>=1.0.0` and `pandas-ta>=0.3.0`.
+- Key design decisions:
+  - No fallback to TradingView. Clean cut as specified.
+  - TTL cache (5min default) inside provider to avoid hammering yfinance.
+  - Configurable DTE range (7-90 days default) for options chain filtering.
+  - Recommendation values computed from signal ratios when not available from API (vs TV which had separate Recommend.All/Other/MA fields from scanner).
+
+### Options Chain Filters Extraction + README yfinance Update (2026-07)
+- Created `src/options_chain_filters.py` — standalone filter pipeline module extracted from `options_chain_parser.py`.
+- Contains 5 functions: `filter_options_chain_by_type`, `filter_options_chain_for_position`, `filter_options_chain_by_delta`, `filter_options_chain_by_roll_direction`, `format_roll_candidates_table`.
+- Also includes helper `_fmt_exp` and constants `_ROLL_STRIKE_FILTERS`, `_STRICT_LATER_ROLLS`.
+- Module is fully self-contained — imports only `datetime`, `logging`, no dependency on `options_chain_parser.py`.
+- Works on the unified dict format (YYYYMMDD→strike→contract) shared between TradingView parser and yfinance provider.
+- Updated `README.md` to reflect yfinance migration: replaced all TradingView/Playwright/BS4/scanner API references in architecture, data gathering, pre-fetch, cache, setup, Docker, troubleshooting, and project structure sections.
+- Key pattern: The filter pipeline is provider-agnostic — it operates on the structured dict format regardless of data source. This is why extraction into a standalone module makes sense.
+
+### Phase 2 Completed — Filters Extraction + README Rewrite (2026-07)
+**Status:** ✅ Completed  
+**Commit:** 917c882  
+**Files Created/Modified:** 2 (220+/850-)  
+
+Executed parallel Phase 2 track: extracted options chain filter pipeline into standalone `src/options_chain_filters.py` module (16.8 KB); completely rewrote README to document yfinance as single data source, eliminating all TradingView/Playwright/BeautifulSoup references.
+
+**Extraction rationale:** Filter functions work on provider-agnostic unified dict format (YYYYMMDD→strike→contract). Keeping in `options_chain_parser.py` unnecessarily couples them to TV parser. Standalone module enables clean imports without pulling TV-specific code.
+
+**README changes:**
+- Opening: yfinance direct API, no browser/scraping/auth
+- Architecture: Yahoo Finance as data source, updated agent/container counts
+- Pre-fetch section: Renamed to "Pre-fetch Architecture (yfinance)"
+- Cache section: "Data Cache" with TTL + rate limiting
+- Setup: Removed `playwright install chromium`, added `py-vollib`, `pandas-ta`
+- Docker: Removed Chromium pre-install
+- Troubleshooting: "Data Fetching Issues" replaces "Playwright / Chromium Issues"
+- All TradingView/Playwright/BS4 references removed (15+ sections affected)
+
+**Backward compatibility:** Existing imports from `options_chain_parser` still work; new code imports from `options_chain_filters`.
+
+**Impact:** Documentation fully aligned with yfinance architecture; onboarding and Docker setup reflect scraping elimination.
+
+### Phase 3 Instruction File Refactoring (2026-07)
+**Status:** ✅ Completed  
+**Commit:** 2709b75  
+**Files Modified:** 20 (14 renamed, 6 import updates)  
+
+Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover from TradingView era). Migration to yfinance is complete, so naming should reflect current reality.
+
+**Execution:**
+- Used `git mv` for all 14 files to preserve git history
+- Updated 10 import sites across 6 modules:
+  - `src/agent_runner.py` (4 imports: supervisor, alpha, summary, report)
+  - `src/cash_secured_put_agent.py` (1 import)
+  - `src/covered_call_agent.py` (1 import)
+  - `src/open_call_monitor_agent.py` (2 imports: assessment, roll)
+  - `src/open_put_monitor_agent.py` (2 imports: assessment, roll)
+  - `web/app.py` (2 imports: open call/put chat)
+- No cross-references inside instruction files themselves — all clean
+- Verified with quick imports + full test suite (96 tests passed)
+
+**Naming pattern:** Variable names (e.g., `TV_SUMMARY_INSTRUCTIONS`) kept as-is for now — string constants are low-touch and renaming would ripple through many files for marginal gain.
+
+**Impact:** Codebase now accurately reflects yfinance-only architecture; no lingering TradingView naming artifacts in strategy logic layer.
+
+### Phase 5 — Instruction Content TradingView→yfinance (2026-05, Task)
+- Verified all 9 instruction files already had TradingView references replaced (43 replacements) by prior commit 895f157.
+- 5 additional files (roll, alpha, supervisor, summary) had no TradingView refs — no changes needed.
+- Key replacements: TradingView→Yahoo Finance, Playwright→yfinance, "browser tools"→"data fetching tools", "TradingView provides RSI..."→"computed via pandas-ta".
+- Trading logic, thresholds, DTE rules all preserved unchanged. Variable names (TV_*) kept for import stability.
+- All 96 tests pass. Decision doc written to inbox.
+
+### Hybrid Options Chain — yfinance + TradingView Fallback (2026-07)
+- Problem: yfinance returns zeroed bid/ask/IV/volume data when US markets are closed. The old TradingView Playwright scraper cached stale-but-useful last-close data.
+- Solution: Hybrid approach — yfinance is primary (market open), TradingView Playwright is fallback (market closed). Only options chain uses this; overview/technicals/forecast/dividends stay yfinance 24/7.
+- Created `src/market_hours.py`: `is_us_market_open()` checks Mon–Fri 9:30 AM – 4:00 PM ET, excludes 10 NYSE holidays (rule-based, any year). Uses `pytz` for timezone conversion. Easter computed via anonymous Gregorian algorithm for Good Friday.
+- Created `src/tv_options_chain_fetcher.py`: Standalone Playwright fetcher recovered from `main:src/tv_data_fetcher.py` (lines 1219-1420). Self-contained — no dependency on old `tv_data_fetcher.py`. Includes `_parse_tv_to_yfinance_format()` that transforms TradingView scanner API fields into the exact same strike-keyed dict structure yfinance produces (contractSymbol, strike, bid, ask, mid, iv, greeks, volume, etc). Fields not available from TradingView (volume, openInterest, lastPrice, lastTradeDate) default to zero/null.
+- Modified `src/yfinance_data_provider.py::_build_options_chain()`: Checks `is_us_market_open()` first. If closed → attempts TradingView fallback, falls back to yfinance on any failure. Added `market_status` field ("open"/"closed") to options chain JSON. Error handling: if Playwright fails, yfinance data (even zeroed) is returned — never crashes.
+- Updated `requirements.txt`: added `playwright>=1.40.0`, `beautifulsoup4>=4.12.0`.
+- Updated `Dockerfile`: added `playwright install chromium --with-deps` after pip install.
+- All 96 tests pass unchanged.
+- Key pattern: When a primary data source has known gaps (off-hours zeros), a targeted fallback for specific data types is better than a full fallback. The fallback must produce identical output structure so consumers don't need conditional logic.

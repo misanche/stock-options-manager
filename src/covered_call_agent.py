@@ -1,7 +1,7 @@
 from .agent_runner import AgentRunner
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
-from .tv_covered_call_instructions import TV_COVERED_CALL_INSTRUCTIONS
+from .covered_call_instructions import TV_COVERED_CALL_INSTRUCTIONS
 import random
 
 
@@ -16,7 +16,7 @@ async def run_covered_call_analysis(config, runner: AgentRunner,
         runner: Initialized AgentRunner instance
         cosmos: CosmosDBService instance
         context_provider: ContextProvider for activity history
-        symbol: Optional symbol to filter analysis (e.g., 'NYSE-AAPL')
+        symbol: Optional symbol to filter analysis (e.g., 'AAPL')
     """
     print(f"\n{'='*60}")
     print(f"Starting CoveredCallAgent analysis" + (f" for {symbol}" if symbol else ""))
@@ -36,30 +36,30 @@ async def run_covered_call_analysis(config, runner: AgentRunner,
         if not cc_symbols:
             print("No symbols enabled for covered call — skipping")
             return
-        if getattr(config, 'tradingview_randomize_symbols', True):
+        if getattr(config, 'yfinance_randomize_symbols', True):
             random.shuffle(cc_symbols)
 
     symbol_names = [s["symbol"] for s in cc_symbols]
     print(f"Analyzing {len(cc_symbols)} symbols: {', '.join(symbol_names)}")
 
-    from .tv_data_fetcher import create_fetcher
+    from .yfinance_data_provider import create_provider
 
+    provider = create_provider(getattr(config, 'yfinance_config', None))
     for sym_doc in cc_symbols:
-        async with create_fetcher(config) as fetcher:
-            await runner.run_symbol_agent(
-                name="CoveredCallAgent",
-                instructions=TV_COVERED_CALL_INSTRUCTIONS,
-                symbol=sym_doc["symbol"],
-                exchange=sym_doc["exchange"],
-                agent_type="covered_call",
-                cosmos=cosmos,
-                context_provider=context_provider,
-                max_activity_entries=config.max_activity_entries,
-                fetcher=fetcher,
-                model=config.model_for('analysis'),
-                supervisor_model=config.model_for('supervisor'),
-                alpha_model=config.model_for('alpha'),
-            )
+        await runner.run_symbol_agent(
+            name="CoveredCallAgent",
+            instructions=TV_COVERED_CALL_INSTRUCTIONS,
+            symbol=sym_doc["symbol"],
+            exchange=sym_doc["exchange"],
+            agent_type="covered_call",
+            cosmos=cosmos,
+            context_provider=context_provider,
+            max_activity_entries=config.max_activity_entries,
+            fetcher=provider,
+            model=config.model_for('analysis'),
+            supervisor_model=config.model_for('supervisor'),
+            alpha_model=config.model_for('alpha'),
+        )
 
     print(f"\n{'='*60}")
     print(f"Completed CoveredCallAgent analysis")

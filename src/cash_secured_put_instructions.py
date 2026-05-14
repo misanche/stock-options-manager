@@ -1,7 +1,7 @@
 """
-Cash-Secured Put Agent System Instructions (TradingView)
+Cash-Secured Put Agent System Instructions (Yahoo Finance)
 Expert-level guidance for selling put options with cash reserves.
-Data is pre-fetched from TradingView via Playwright — the agent only analyzes.
+Data is pre-fetched from Yahoo Finance via yfinance — the agent only analyzes.
 """
 
 TV_CASH_SECURED_PUT_INSTRUCTIONS = """
@@ -19,11 +19,11 @@ A cash-secured put involves selling put options while holding cash equal to the 
 
 ## DATA SOURCE
 
-All market data has been **pre-fetched from TradingView** and is included directly in your message. You do NOT have any browser tools. Do NOT attempt to call any tools — simply analyze the data provided.
+All market data has been **pre-fetched from Yahoo Finance** and is included directly in your message. You do NOT have any data fetching tools. Do NOT attempt to call any tools — simply analyze the data provided.
 
 **Data characteristics:**
 - Values may show "—" during non-market hours — note this and proceed with available data
-- Pre-calculated technicals — TradingView provides RSI, MACD, Stochastic, CCI, ADX, all MAs (10-200) with Buy/Sell/Neutral signals already computed. No manual calculation needed.
+- Pre-calculated technicals — RSI, MACD, Stochastic, CCI, ADX, all MAs (10-200) with Buy/Sell/Neutral signals are computed via pandas-ta. No manual calculation needed.
 - Pivot points — Classic, Fibonacci, Camarilla, Woodie, DM with R1-R3, S1-S3 — excellent for support level identification and strike selection
 
 ### Phase 1: Data Review & Investment Quality Validation
@@ -275,7 +275,7 @@ The agent synthesizes all gathered data into a comprehensive analysis:
 
 ### Important Notes on Data Availability
 
-- **TradingView Pre-Fetched Data — Advantages:**
+- **Pre-Fetched Data — Advantages:**
   - Pre-calculated technical indicators: RSI, MACD, Stochastic, CCI, ADX, all MAs (10-200), Ichimoku, VWMA, Hull MA — with Buy/Sell/Neutral signals already computed (no manual calculation!)
   - Pivot points: Classic, Fibonacci, Camarilla, Woodie, DM — with S1-S3 support levels — excellent for put strike selection
   - Analyst consensus: Number of analysts + buy/sell/neutral breakdown + earnings data — serves as investment quality alert
@@ -299,7 +299,7 @@ The agent synthesizes all gathered data into a comprehensive analysis:
   - **No Google Trends** — No retail interest indicator
 
 - **Key Difference from Other Providers:**
-  - TradingView provides **pre-analyzed technical signals** (Buy/Sell/Neutral summaries for oscillators, MAs, and overall) rather than raw data
+  - The provider includes **pre-analyzed technical signals** (Buy/Sell/Neutral summaries for oscillators, MAs, and overall) rather than raw data
   - The agent works from **analyzed signals** → synthesis, rather than raw data → calculation → synthesis
   - **Pivot points replace manual support identification**: S1-S3 levels replace scanning 1-year price history for local minima, consolidation zones, and Fibonacci retracement calculations
   - **Investment worthiness gate uses analyst consensus**: Forecast analyst ratings, earnings history, and price targets provide the quality assessment indicator

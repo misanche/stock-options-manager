@@ -1558,3 +1558,1207 @@ All agents used a single `model_deployment` config value. Different agents have 
 **Files Changed:** `config.yaml`, `src/config.py`, `src/agent_runner.py`
 
 ---
+# yfinance Feasibility Deep-Dive: Replacing All Data Sources
+
+**Date:** 2026-05-14  
+**Author:** Linus (Quant Dev)  
+**Status:** Analysis Complete  
+**Impact:** All agents, DGI screener, options chain pipeline, TV data fetcher, StockAnalysis fetcher
+
+---
+
+## Executive Summary
+
+**Verdict: yfinance can replace TradingView and StockAnalysis.com for ~90% of data needs.** The biggest win is options chains (23+ expiration dates vs. TradingView's ~5) and elimination of all scraping fragility (Playwright, anti-bot detection, User-Agent rotation, 403 recovery). The main gap is Greeks — yfinance provides IV but not delta/gamma/theta/vega/rho. These must be computed via Black-Scholes, which is straightforward. Pre-computed oscillator signals (TradingView's "Buy/Sell/Neutral" recommendations) are also lost, but we already compute RSI/SMA/Bollinger from OHLCV in `dgi_metrics.py`, so extending that is natural.
+
+---
+
+## 1. Current Data Sources Inventory
+
+### 1.1 TradingView (`tv_data_fetcher.py`) — 5 Resource Types
+
+| Resource | Method | Anti-bot Risk | Fragility |
+|----------|--------|--------------|-----------|
+| `overview` | BS4 scrape + scanner API POST | High (403s, CAPTCHAs) | URL/field changes break it |
+| `technicals` | BS4 scrape + scanner API POST | High | Field name migrations |
+| `forecast` | BS4 scrape + scanner API POST | High | Same |
+| `dividends` | BS4 scrape + scanner API POST | High | Same |
+| `options_chain` | Playwright browser interception | Very High (headless detection) | URL pattern changes (scan/scan2/scan3/screener) — already broke once |
+
+### 1.2 StockAnalysis.com (`stockanalysis_fetcher.py`)
+- Scrapes dividend growth years, yield, payout ratio, CAGR
+- User-Agent rotation, dual parsing (DOM + regex fallback)
+- Used to override Yahoo's unreliable `years_consecutive_increases`
+
+### 1.3 Existing yfinance (`yfinance_fetcher.py` + `dgi_metrics.py`)
+- Already fetches `ticker.info`, `ticker.dividends`, `ticker.history(period="1y")`
+- Already computes RSI, SMA, Bollinger Bands from OHLCV
+- Already used as primary data source for DGI screener
+
+---
+
+## 2. Comprehensive Feasibility Matrix
+
+### 2.1 Overview / Fundamentals (TradingView `overview`)
+
+| Data Field | TV Scanner Field | yfinance Equivalent | Coverage | Notes |
+|------------|-----------------|-------------------|----------|-------|
+| Market Cap | `market_cap_basic` | `ticker.info['marketCap']` | ✅ Full | Same source (Yahoo) |
+| P/E Ratio (TTM) | `price_earnings_ttm` | `ticker.info['trailingPE']` | ✅ Full | Also `forwardPE` available |
+| EPS (TTM) | `earnings_per_share_basic_ttm` | `ticker.info['trailingEps']` | ✅ Full | Also `epsForward`, `epsCurrentYear` |
+| Dividend Yield | `dividends_yield` | `ticker.info['dividendYield']` | ✅ Full | Returns decimal (0.0036) |
+| Revenue (FY) | `total_revenue_fy` | `ticker.info['totalRevenue']` | ✅ Full | |
+| Net Income | `net_income` | `ticker.info['netIncomeToCommon']` | ✅ Full | |
+| Beta (1Y) | `beta_1_year` | `ticker.info['beta']` | ✅ Full | |
+| Shares Outstanding | `total_shares_outstanding` | `ticker.info['sharesOutstanding']` | ✅ Full | |
+| Float Shares | `float_shares_outstanding_current` | `ticker.info['floatShares']` | ✅ Full | |
+| Employees | `number_of_employees` | `ticker.info['fullTimeEmployees']` | ✅ Full | |
+| Sector | `sector` | `ticker.info['sector']` | ✅ Full | |
+| Industry | `industry` | `ticker.info['industry']` | ✅ Full | |
+| Revenue (Last Quarter) | `revenue_fq` | `ticker.quarterly_income_stmt` | ✅ Full | Need to extract from financials DataFrame |
+| EPS (Last Quarter) | `earnings_per_share_fq` | `ticker.info['trailingEps']` | ⚠️ Partial | Quarterly EPS needs `earnings_history` |
+| EPS Forecast (Next Q) | `earnings_per_share_forecast_next_fq` | `ticker.info['epsForward']` | ⚠️ Partial | Forward EPS is annual, not quarterly |
+| Revenue Forecast (Next Q) | `revenue_forecast_next_fq` | `ticker.revenue_estimate` | ✅ Full | DataFrame with current/next quarter |
+| Next Earnings Date | `earnings_release_next_date_fq` | `ticker.info['earningsTimestampStart']` | ✅ Full | Also `earningsTimestampEnd` |
+| Analyst Rating | `recommendation_mark` | `ticker.info['recommendationMean']` | ✅ Full | 1-5 scale (same semantics) |
+| All-Time High | `all_time_high` | `ticker.info['allTimeHigh']` | ✅ Full | |
+| All-Time Low | `all_time_low` | `ticker.info['allTimeLow']` | ✅ Full | |
+| Currency | `fundamental_currency_code` | `ticker.info['currency']` | ✅ Full | |
+| Website | `web_site_url` | `ticker.info['website']` | ✅ Full | |
+
+**Coverage: 21/21 fields ✅ (2 partial but usable)**
+
+### 2.2 Dividends (TradingView `dividends`)
+
+| Data Field | TV Scanner Field | yfinance Equivalent | Coverage | Notes |
+|------------|-----------------|-------------------|----------|-------|
+| DPS (FY) | `dps_common_stock_prim_issue_fy` | `ticker.info['dividendRate']` | ✅ Full | Annual dividend rate |
+| DPS (FQ) | `dps_common_stock_prim_issue_fq` | `ticker.info['lastDividendValue']` | ✅ Full | |
+| Dividend Yield | `dividends_yield` | `ticker.info['dividendYield']` | ✅ Full | |
+| Payout Ratio (TTM) | `dividend_payout_ratio_ttm` | `ticker.info['payoutRatio']` | ✅ Full | |
+| DPS Growth YoY | `dps_common_stock_prim_issue_yoy_growth_fy` | Computed from `ticker.dividends` | ✅ Full | Already computed in `dgi_metrics.py` |
+| Consecutive Years Paying | `continuous_dividend_payout` | Not directly available | ⚠️ Compute | Can compute from `ticker.dividends` series |
+| Consecutive Years Growing | `continuous_dividend_growth` | Not directly available | ⚠️ Compute | Already computed in `dgi_metrics.py` (`calculate_years_consecutive_increases`) |
+| Ex-Dividend Date | `ex_dividend_date_recent` | `ticker.info['exDividendDate']` | ✅ Full | Epoch timestamp |
+| EPS (TTM) | `earnings_per_share_basic_ttm` | `ticker.info['trailingEps']` | ✅ Full | |
+| P/E Ratio | `price_earnings_ttm` | `ticker.info['trailingPE']` | ✅ Full | |
+| Market Cap | `market_cap_basic` | `ticker.info['marketCap']` | ✅ Full | |
+
+**Coverage: 11/11 fields ✅**
+
+**StockAnalysis.com replacement:** The primary value from SA was `growth_years` (consecutive dividend increase years). yfinance's `ticker.dividends` provides the full dividend history, and we already compute this in `dgi_metrics.py` via `calculate_years_consecutive_increases()`. However, note the existing caveat in `dgi_screener.py`: SA's `growth_years` was preferred because Yahoo's dividend series can be unreliable. **Risk: We lose the SA cross-check.** Mitigation: validate our computed value against known Dividend Aristocrat lists periodically.
+
+### 2.3 Technicals (TradingView `technicals`)
+
+| Data Field | TV Scanner Field | yfinance Equivalent | Coverage | Notes |
+|------------|-----------------|-------------------|----------|-------|
+| Overall Recommendation | `Recommend.All` | ❌ Not available | ❌ Gap | Must compute our own composite signal |
+| Oscillator Recommendation | `Recommend.Other` | ❌ Not available | ❌ Gap | Must compute |
+| MA Recommendation | `Recommend.MA` | ❌ Not available | ❌ Gap | Must compute |
+| RSI (14) | `RSI` | Computed from OHLCV | ✅ Full | Already in `dgi_metrics.py` |
+| Stochastic %K | `Stoch.K` | Computed from OHLCV | ✅ Full | Standard formula from H/L/C |
+| CCI (20) | `CCI20` | Computed from OHLCV | ✅ Full | (typical_price - SMA) / (0.015 × mean_deviation) |
+| ADX (14) | `ADX` | Computed from OHLCV | ✅ Full | Requires +DI/-DI computation |
+| Awesome Oscillator | `AO` | Computed from OHLCV | ✅ Full | SMA(5, median) - SMA(34, median) |
+| Momentum (10) | `Mom` | Computed from OHLCV | ✅ Full | close - close[10] |
+| MACD (12,26) | `MACD.macd` | Computed from OHLCV | ✅ Full | EMA(12) - EMA(26) |
+| Williams %R | `W.R` | Computed from OHLCV | ✅ Full | Standard formula |
+| Bull Bear Power | `BBPower` | Computed from OHLCV | ✅ Full | close - EMA(13) |
+| Ultimate Oscillator | `UO` | Computed from OHLCV | ✅ Full | Weighted multi-period |
+| SMA 10/20/30/50/100/200 | `SMA10..SMA200` | Computed from OHLCV | ✅ Full | Already have `calculate_sma` |
+| EMA 10/20/30/50/100/200 | `EMA10..EMA200` | Computed from OHLCV | ✅ Full | Standard EMA formula |
+| Ichimoku Base Line | `Ichimoku.BLine` | Computed from OHLCV | ✅ Full | (highest_high_26 + lowest_low_26) / 2 |
+| VWMA (20) | `VWMA` | Computed from OHLCV + Volume | ✅ Full | Volume-weighted MA |
+| Hull MA (9) | `HullMA9` | Computed from OHLCV | ✅ Full | WMA(2×WMA(n/2) - WMA(n), √n) |
+| ATR | Not in scanner cols | Computed from OHLCV | ✅ Full | Already familiar pattern |
+
+**Coverage: All indicator VALUES computable ✅. Pre-computed signals ("Buy/Sell/Neutral") lost ❌ — must reimplement signal logic.**
+
+**Key insight:** The signal interpretation logic (`_oscillator_signal`, `_ma_signal`) already exists in `tv_data_fetcher.py`. We just need to compute the raw indicator values from OHLCV and feed them through the same signal functions. The entire `_build_technicals_dict` pipeline can be preserved — only the data source changes.
+
+**Recommended approach:** Create a `technicals_calculator.py` module that:
+1. Takes OHLCV DataFrame (from `ticker.history()`)
+2. Computes all oscillator and MA values
+3. Returns a dict matching the same keys as TradingView scanner (`RSI`, `Stoch.K`, `MACD.macd`, etc.)
+4. Existing `_oscillator_signal` and `_ma_signal` functions work unchanged
+
+**Library option:** `ta` (Technical Analysis library for Python) or `pandas-ta` can compute all these indicators in one line each. Would eliminate need to hand-code each formula.
+
+### 2.4 Forecast / Analyst Data (TradingView `forecast`)
+
+| Data Field | TV Scanner Field | yfinance Equivalent | Coverage | Notes |
+|------------|-----------------|-------------------|----------|-------|
+| Avg Price Target | `price_target_average` | `ticker.info['targetMeanPrice']` or `ticker.analyst_price_targets['mean']` | ✅ Full | |
+| High Price Target | `price_target_high` | `ticker.info['targetHighPrice']` or `ticker.analyst_price_targets['high']` | ✅ Full | |
+| Low Price Target | `price_target_low` | `ticker.info['targetLowPrice']` or `ticker.analyst_price_targets['low']` | ✅ Full | |
+| Median Price Target | `price_target_median` | `ticker.info['targetMedianPrice']` or `ticker.analyst_price_targets['median']` | ✅ Full | |
+| Overall Rating (1-5) | `recommendation_mark` | `ticker.info['recommendationMean']` | ✅ Full | Same 1-5 scale |
+| Total Analysts | `recommendation_total` | `ticker.info['numberOfAnalystOpinions']` | ✅ Full | |
+| Buy/Hold/Sell breakdown | `recommendation_buy/hold/sell` | `ticker.recommendations_summary` | ✅ Full | DataFrame with strongBuy/buy/hold/sell/strongSell |
+| Technical Recommendation | `Recommend.All` | ❌ Not available | ❌ Gap | Same gap as technicals |
+
+**Coverage: 7/8 fields ✅. Technical recommendation is the same gap from technicals section.**
+
+**Bonus data from yfinance not available in TradingView:**
+- `ticker.upgrades_downgrades` — individual analyst firm upgrades/downgrades with dates, price targets
+- `ticker.earnings_estimate` — consensus EPS estimates
+- `ticker.revenue_estimate` — consensus revenue estimates  
+- `ticker.growth_estimates` — growth estimate percentages
+- `ticker.eps_trend` — EPS trend over time
+- `ticker.eps_revisions` — EPS revision history
+
+### 2.5 Options Chain (TradingView Playwright interception)
+
+| Data Field | TV Chain | yfinance `option_chain()` | Coverage | Notes |
+|------------|----------|--------------------------|----------|-------|
+| Strike | ✅ `strike` | ✅ `strike` | ✅ Full | |
+| Bid | ✅ `bid` | ✅ `bid` | ✅ Full | |
+| Ask | ✅ `ask` | ✅ `ask` | ✅ Full | |
+| Mid (theo price) | ✅ `theoPrice` | ❌ Not provided | ⚠️ Compute | `(bid + ask) / 2` or Black-Scholes |
+| IV | ✅ `iv` | ✅ `impliedVolatility` | ✅ Full | |
+| **Delta** | ✅ `delta` | ❌ Not provided | ❌ Gap | Must compute via Black-Scholes |
+| **Gamma** | ✅ `gamma` | ❌ Not provided | ❌ Gap | Must compute via Black-Scholes |
+| **Theta** | ✅ `theta` | ❌ Not provided | ❌ Gap | Must compute via Black-Scholes |
+| **Vega** | ✅ `vega` | ❌ Not provided | ❌ Gap | Must compute via Black-Scholes |
+| **Rho** | ✅ `rho` | ❌ Not provided | ❌ Gap | Must compute via Black-Scholes |
+| Bid IV | ✅ `bid_iv` | ❌ Not provided | ❌ Gap | Minor — main IV sufficient |
+| Ask IV | ✅ `ask_iv` | ❌ Not provided | ❌ Gap | Minor — main IV sufficient |
+| Last Price | ❌ | ✅ `lastPrice` | ✅ Bonus | |
+| Volume | ❌ | ✅ `volume` | ✅ Bonus | Useful for liquidity filtering |
+| Open Interest | ❌ | ✅ `openInterest` | ✅ Bonus | Critical for liquidity assessment |
+| In The Money | ❌ | ✅ `inTheMoney` | ✅ Bonus | |
+| Last Trade Date | ❌ | ✅ `lastTradeDate` | ✅ Bonus | Staleness detection |
+| Contract Symbol | ✅ `opra_symbol` | ✅ `contractSymbol` | ✅ Full | |
+| Currency | ✅ `currency` | ✅ `currency` | ✅ Full | |
+| Contract Size | ❌ | ✅ `contractSize` | ✅ Bonus | |
+
+**yfinance option chain columns (verified):**
+```
+contractSymbol, lastTradeDate, strike, lastPrice, bid, ask, change, 
+percentChange, volume, openInterest, impliedVolatility, inTheMoney, 
+contractSize, currency
+```
+
+**Expiration dates: AAPL has 23 expirations via yfinance vs. ~5 from TradingView.** This is the biggest win — agents can evaluate far more expiration choices for optimal DTE targeting.
+
+### Greeks Computation (Addressing the Gap)
+
+The 5 Greeks (delta, gamma, theta, vega, rho) must be computed. This is standard and well-solved:
+
+```python
+# Using py_vollib or scipy
+from py_vollib.black_scholes.greeks import analytical as greeks
+from py_vollib.black_scholes import black_scholes
+
+# Inputs available from yfinance:
+# S = current stock price (ticker.info['currentPrice'])
+# K = strike price (from option_chain)
+# T = time to expiry (computed from expiration date)
+# r = risk-free rate (e.g., 10Y Treasury yield via yfinance or fixed)
+# sigma = implied volatility (from option_chain 'impliedVolatility')
+
+delta = greeks.delta('c', S, K, T, r, sigma)  # 'c' for call, 'p' for put
+gamma = greeks.gamma('c', S, K, T, r, sigma)
+theta = greeks.theta('c', S, K, T, r, sigma)
+vega  = greeks.vega('c', S, K, T, r, sigma)
+rho   = greeks.rho('c', S, K, T, r, sigma)
+```
+
+**Libraries:** `py_vollib` (fast, C-optimized) or `mibian` or pure scipy `norm.cdf` implementation. We already referenced Black-Scholes in the MCP migration (Decision #4: `apply` parameter with `bs_delta`, `bs_gamma`, etc.). This is the same math, just computed locally.
+
+**Risk-free rate:** Can use `yf.Ticker('^TNX').info['regularMarketPrice'] / 100` for 10Y Treasury yield, or hardcode a reasonable default (e.g., 4.5%).
+
+**Effort:** ~50 lines of Python for all 5 Greeks. Well-tested libraries available.
+
+---
+
+## 3. Data NOT Available from yfinance (True Gaps)
+
+| Data | Impact | Mitigation |
+|------|--------|-----------|
+| Pre-computed Buy/Sell/Neutral signals | Medium — agents currently reference these | Recompute from raw indicators (logic already in `tv_data_fetcher.py`) |
+| Bid IV / Ask IV (separate from main IV) | Low — agents use main IV | Use single IV; not decision-critical |
+| Dividend growth years (SA cross-check) | Medium — SA was more reliable than computed | Already compute in `dgi_metrics.py`; validate periodically |
+| TradingView "theo price" (mid) | Low | Compute as `(bid + ask) / 2` |
+
+**None of these are blocking.** All have straightforward mitigations.
+
+---
+
+## 4. WINS — What Gets Better
+
+### 4.1 Options Chain: Massive Improvement
+- **23+ expiration dates** vs. ~5 from TradingView
+- Agents can properly target 30-45 DTE sweet spot with granular choices
+- **Volume and Open Interest** data — enables liquidity filtering (avoid illiquid contracts)
+- **Last Trade Date** — detect stale quotes
+- No Playwright, no browser interception, no URL pattern matching, no `scan/scan2/scan3/screener` endpoint migrations
+
+### 4.2 Elimination of Scraping Fragility
+- **No Playwright dependency** — removes ~50MB of Chromium downloads, async browser management, headless detection bypass
+- **No anti-bot detection** — no User-Agent rotation, no 403 recovery with exponential backoff, no warmup pages, no cookie harvesting
+- **No HTML parsing fragility** — no dual-strategy (DOM + regex) scraping, no field name alias maps
+- **No TradingView API endpoint migrations** — the `scan/scan2/scan3/screener` migration that caused premium=0.0 across all agents would never happen
+
+### 4.3 Single Dependency
+- Replace 3 external dependencies (TradingView + StockAnalysis.com + existing yfinance) with 1
+- Remove `playwright`, `requests`, `beautifulsoup4` as scraping deps (keep `requests` for other uses)
+- Simpler CI/CD, faster container builds (no Playwright install)
+
+### 4.4 Bonus Data
+- **Analyst upgrades/downgrades** with specific firms, dates, and price target changes
+- **EPS estimates, revenue estimates, growth estimates** — richer consensus data
+- **Insider transactions and institutional holders** — was removed in MCP migration (Decision #4)
+- **Earnings history** — actual vs. estimated EPS for surprise analysis
+- **SEC filings** — link to primary sources
+- **WebSocket streaming** — potential for real-time price updates
+
+### 4.5 Rate Limiting Already Solved
+- `yfinance_fetcher.py` already has `_rate_limit()` with configurable RPM and exponential backoff retries
+- Extends naturally to options chain fetching
+
+---
+
+## 5. RISKS
+
+### 5.1 Yahoo Finance API Stability
+- yfinance is unofficial — Yahoo can change/block the API at any time
+- **Mitigation:** yfinance has 18k+ GitHub stars, massive community, actively maintained. Any breakage gets fixed within days. This is the same risk TradingView has (and TV already broke on us).
+
+### 5.2 Greeks Computation Accuracy
+- Our computed Greeks vs. TradingView's may differ slightly due to model assumptions (dividend yield handling, American vs. European options)
+- **Mitigation:** Use `py_vollib` which handles American options. Differences will be within acceptable trading tolerances. Our agents already tolerate approximate values.
+
+### 5.3 Rate Limiting
+- Yahoo may throttle aggressive option chain fetching (fetching all 23 expirations = 23 API calls per symbol)
+- **Mitigation:** Already have rate limiting in `yfinance_fetcher.py`. Can batch with 1-second delays. For 10 symbols × 23 expirations = ~230 calls, at 1/sec = ~4 minutes. Acceptable for our polling cadence.
+
+### 5.4 Dividend Growth Years Reliability
+- Losing StockAnalysis.com cross-check means relying solely on Yahoo's dividend series
+- **Mitigation:** `calculate_years_consecutive_increases()` is well-tested. Can add a static Dividend Aristocrat list as a secondary validation.
+
+### 5.5 Data Timing
+- yfinance data may have slight delays vs. TradingView (which intercepts real-time scanner data)
+- **Mitigation:** Our agents run on multi-hour polling cycles. 15-minute delay is irrelevant for options strategy decisions.
+
+---
+
+## 6. Implementation Roadmap (Suggested)
+
+### Phase 1: Options Chain Migration (Highest Impact)
+1. Extend `yfinance_fetcher.py` with `get_options_chain(symbol)` method
+2. Fetch ALL expiration dates via `ticker.options`
+3. Fetch chain for each date via `ticker.option_chain(date)`
+4. Add Greeks computation (Black-Scholes from IV + stock price + strike + DTE)
+5. Output in same format as `options_chain_parser.py` (strike-keyed dicts per expiration)
+6. **Eliminates:** `tv_data_fetcher.py` Playwright section, `options_chain_parser.py`
+
+### Phase 2: Fundamentals + Dividends + Forecast
+1. Map all `ticker.info` fields to current overview/dividend/forecast structures
+2. Add `ticker.recommendations_summary` for analyst breakdown
+3. Add `ticker.analyst_price_targets` for price targets
+4. **Eliminates:** `tv_data_fetcher.py` BS4 sections, `stockanalysis_fetcher.py`
+
+### Phase 3: Technicals
+1. Create `technicals_calculator.py` with all oscillator/MA computations
+2. Use `ticker.history(period="1y")` for OHLCV
+3. Reuse signal logic from `tv_data_fetcher.py` (`_oscillator_signal`, `_ma_signal`)
+4. Consider `pandas-ta` library to avoid hand-coding 15+ indicators
+5. **Eliminates:** TradingView scanner API dependency for technicals
+
+### Phase 4: Agent Instructions Update
+1. Update all `tv_*_instructions.py` files — remove TradingView-specific data gathering steps
+2. Simplify agent prompts — data arrives pre-fetched, no discovery protocol needed
+3. Update `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` for new column names
+
+### Phase 5: Cleanup
+1. Remove `tv_data_fetcher.py`, `tv_cache.py`, `stockanalysis_fetcher.py`, `options_chain_parser.py`
+2. Remove Playwright from `requirements.txt`
+3. Update container builds (remove Chromium/Playwright install steps)
+
+---
+
+## 7. yfinance API Quick Reference
+
+```python
+import yfinance as yf
+t = yf.Ticker("AAPL")
+
+# Fundamentals (single dict, ~150 keys)
+t.info                     # marketCap, trailingPE, dividendYield, sector, etc.
+
+# Price History
+t.history(period="1y")     # OHLCV DataFrame (Open, High, Low, Close, Volume)
+t.history(period="2y")     # Longer history for 200-day SMA
+
+# Dividends
+t.dividends                # Full dividend history (Series indexed by date)
+t.info['exDividendDate']   # Next ex-div date (epoch)
+t.info['dividendRate']     # Annual dividend per share
+t.info['payoutRatio']      # Payout ratio (decimal)
+
+# Options
+t.options                  # Tuple of all expiration date strings ("2026-05-15", ...)
+t.option_chain("2026-06-18")  # OptionChain(calls=DataFrame, puts=DataFrame)
+# Columns: contractSymbol, lastTradeDate, strike, lastPrice, bid, ask,
+#           change, percentChange, volume, openInterest, impliedVolatility,
+#           inTheMoney, contractSize, currency
+
+# Analyst Data
+t.analyst_price_targets    # Dict: current, high, low, mean, median
+t.recommendations          # Same as recommendations_summary
+t.recommendations_summary  # DataFrame: period, strongBuy, buy, hold, sell, strongSell
+t.upgrades_downgrades      # DataFrame: Firm, ToGrade, FromGrade, Action, priceTarget changes
+
+# Earnings
+t.info['earningsTimestampStart']  # Next earnings date
+t.earnings_estimate        # Consensus EPS estimates
+t.revenue_estimate         # Consensus revenue estimates
+t.earnings_history         # Actual vs. estimated EPS
+t.eps_trend                # EPS trend
+t.growth_estimates         # Growth estimate percentages
+
+# Financials
+t.income_stmt              # Annual income statement
+t.quarterly_income_stmt    # Quarterly income statement
+t.balance_sheet            # Annual balance sheet
+t.cashflow                 # Annual cash flow
+```
+
+---
+
+## 8. Final Verdict
+
+| Dimension | Score | Detail |
+|-----------|-------|--------|
+| Data Coverage | 9/10 | Only missing pre-computed signals and raw Greeks (both computable) |
+| Options Chain | 10/10 | Massive upgrade: 23 expirations, volume, OI, last trade date |
+| Reliability | 9/10 | No scraping = no breakage. yfinance community fixes Yahoo changes fast |
+| Simplicity | 10/10 | One library, no Playwright, no anti-bot, no HTML parsing |
+| Risk | Low | Main risk is Yahoo API changes, same risk class as current TradingView |
+| Effort | Medium | ~2-3 days for full migration. Greeks + technicals computation is the bulk |
+
+**Recommendation: Proceed with migration.** The benefits dramatically outweigh the costs. Options chain improvement alone justifies the change — agents currently can't properly evaluate the 30-45 DTE sweet spot with only 5 expiration dates.
+
+---
+
+# Architecture Transition Plan: Full yfinance Migration
+
+**Date:** 2026-05-14  
+**Author:** Danny (Lead)  
+**Status:** Approved — Ready for Implementation  
+**Based on:** Linus's feasibility analysis (`linus-yfinance-feasibility.md`)  
+**Directive:** User (dsanchor) — NO fallback, NO keeping old code. Clean cut.
+
+---
+
+## Executive Summary
+
+This plan replaces **all** TradingView and StockAnalysis.com data sources with yfinance. It eliminates Playwright, BeautifulSoup scraping, anti-bot detection, and User-Agent rotation. The system gains 23+ option expiration dates (vs ~5), volume/OI liquidity data, and a single reliable data dependency. Estimated effort: **4-5 days** across 5 phases.
+
+---
+
+## 1. File Impact Analysis
+
+### 1.1 Files to DELETE (7 files — 4,227 lines removed)
+
+| File | Lines | Reason |
+|------|-------|--------|
+| `src/tv_data_fetcher.py` | 1,611 | Entire TradingView scraping layer (BS4 + Playwright). Replaced by `yfinance_data_provider.py` |
+| `src/tv_cache.py` | 125 | TradingView-specific cache with anti-stampede locks. yfinance is fast enough for direct calls; replaced by simpler cache in provider |
+| `src/stockanalysis_fetcher.py` | 192 | SA scraping for dividend growth years. Replaced by `dgi_metrics.py` computation from `ticker.dividends` |
+| `src/options_chain_parser.py` | 684 | Parses raw TradingView scanner JSON (field alias maps, OPRA symbol extraction). yfinance returns clean DataFrames — new builder in provider |
+| `TRADINGVIEW_ANTI_BOT.md` | ~200 | No longer relevant |
+| `src/tv_open_call_instructions.py` | 589 | Legacy single-phase instructions (superseded by assessment+roll split). Confirm unused before deleting |
+| `src/tv_open_put_instructions.py` | 603 | Same — legacy single-phase instructions |
+
+### 1.2 Files to CREATE (3 new files)
+
+| File | Purpose | Est. Lines |
+|------|---------|-----------|
+| `src/yfinance_data_provider.py` | **Unified data provider** — fetches all 5 resource types (overview, technicals, forecast, dividends, options chain) via yfinance. Includes Greeks computation (Black-Scholes via `py_vollib`) and technicals computation. Returns structured dicts matching the format agents expect. | ~500 |
+| `src/greeks_calculator.py` | **Black-Scholes Greeks module** — computes delta, gamma, theta, vega, rho from IV + stock price + strike + DTE + risk-free rate. Uses `py_vollib`. Separated for testability and reuse. | ~80 |
+| `src/technicals_calculator.py` | **Technical indicators module** — computes all oscillators (RSI, Stochastic, CCI, ADX, MACD, Momentum, Williams %R, etc.) and MAs (SMA/EMA 10-200, Ichimoku, VWMA, Hull MA) from OHLCV. Includes signal interpretation (Buy/Sell/Neutral). Uses `pandas-ta` where available, falls back to manual. | ~250 |
+
+### 1.3 Files to MODIFY (Heavy — 16 files)
+
+| File | Lines | What Changes | Why |
+|------|-------|-------------|-----|
+| `src/agent_runner.py` | 2,338 | **HEAVY.** Replace `fetcher.fetch_all()` calls with `YFinanceDataProvider.fetch_all()`. Remove all `tv_403` error handling (no more 403s). Remove `_get_tv_cache()` import. Update `run_symbol_agent()` and `run_position_monitor()` data injection. Change `=== PRE-FETCHED TRADINGVIEW DATA ===` header to `=== PRE-FETCHED MARKET DATA ===`. Remove `write_telemetry("tv_fetch", ...)` blocks. Keep `_format_options_chain()` and `_format_current_contract_chain()` but update to work with new structured data (no raw text parsing). Keep `_validate_premium_against_chain()` — works on parsed dict, minimal changes. | Core data flow |
+| `src/covered_call_agent.py` | 67 | Replace `from .tv_data_fetcher import create_fetcher` with `from .yfinance_data_provider import create_provider`. Replace `async with create_fetcher(config) as fetcher` with `provider = create_provider(config)`. Remove `tradingview_randomize_symbols` reference (randomization stays, config key changes to `data_provider.randomize_symbols`). | Fetcher swap |
+| `src/cash_secured_put_agent.py` | 67 | Same changes as `covered_call_agent.py` | Fetcher swap |
+| `src/open_call_monitor_agent.py` | 80 | Same pattern. Replace `create_fetcher` → `create_provider` | Fetcher swap |
+| `src/open_put_monitor_agent.py` | 80 | Same pattern | Fetcher swap |
+| `src/main.py` | ~550 | Replace `_run_options_chain_fetch_async()` — use `YFinanceDataProvider` instead of `create_fetcher`. Remove `from .tv_cache import get_tv_cache`. Remove `from .tv_data_fetcher import create_fetcher`. Update options chain scheduler to use new provider. | Scheduler |
+| `src/config.py` | ~180 | Remove all `tradingview_*` properties (6 properties). Add `yfinance_*` properties: `requests_per_minute`, `max_retries`, `randomize_symbols`. Remove `options_chain_scheduler` TradingView-specific config if no longer needed. | Config cleanup |
+| `src/dgi_screener.py` | ~350 | Remove `_apply_stockanalysis_overrides()` — SA is being deleted. Remove `EXCHANGE_MAP` / `_normalize_exchange()` if no longer needed (exchange mapping moves to provider). | SA removal |
+| `src/dgi_metrics.py` | ~400 | **Extend** with additional technical indicators if `technicals_calculator.py` reuses/wraps these. Existing RSI/SMA/Bollinger stay. May become a thin wrapper that delegates to `technicals_calculator.py` for consistency. | Indicator consolidation |
+| `src/yfinance_fetcher.py` | 134 | **Keep and extend.** Add `get_options_chain(symbol)`, `get_overview(symbol)`, `get_technicals(symbol)`, `get_forecast(symbol)`, `get_dividends(symbol)` methods. This becomes the low-level yfinance wrapper; `yfinance_data_provider.py` orchestrates the higher-level formatting. | Extended API |
+| `src/cosmos_db.py` | ~1000 | Minor. Remove `get_tv_health_status()` and `set_tv_health_status()` methods. Update `write_telemetry()` — change telemetry type from `"tv_fetch"` to `"data_fetch"`. | Cleanup |
+| `web/app.py` | ~2600 | **MODERATE.** Replace all `from src.tv_data_fetcher import create_fetcher` / `from src.tv_cache import get_tv_cache` imports. Update `/api/fetch-preview`, `/api/cache/stats`, `/api/cache/clear`, `/debug` endpoints to use new provider. Rename "TradingView" references in UI text to "Market Data". Remove Playwright-specific fetch preview logic. | Web layer |
+| `config.yaml` | 82 | Remove entire `tradingview:` section (lines 47-55). Rename `options_chain_scheduler` if desired. Add `yfinance:` section with `requests_per_minute: 60`, `max_retries: 3`. | Config |
+| `requirements.txt` | 17 | Remove `playwright>=1.40.0`. Remove `beautifulsoup4>=4.12.0` (only used by TV/SA fetchers). Add `py-vollib>=1.0.0` (Greeks). Optionally add `pandas-ta>=0.3.0` (technicals — evaluate if worth the dependency). Keep `requests>=2.31.0` (used elsewhere). | Dependencies |
+| `Dockerfile` | 24 | Remove `RUN playwright install chromium --with-deps` (saves ~50MB+ in image size). Remove Playwright-related comments. | Build |
+| `README.md` | varies | Remove all TradingView setup instructions. Remove anti-bot section. Update data source description. Remove Playwright dependency mention. | Docs |
+
+### 1.4 Instruction Files to MODIFY (12 files — ~6,500 lines total)
+
+All instruction files need updates. The changes follow a consistent pattern:
+
+| File | Lines | Key Changes |
+|------|-------|------------|
+| `tv_covered_call_instructions.py` | 785 | (1) Rename file → `covered_call_instructions.py`. (2) Replace "pre-fetched from TradingView" → "pre-fetched market data". (3) Remove "You do NOT have any browser tools" (irrelevant). (4) Update Phase 1 data sections — no more "OVERVIEW PAGE", "TECHNICALS PAGE" with TV-specific field descriptions. Use generic section names. (5) Remove pivot point references from technicals (we don't compute those — they're TradingView-specific). (6) Add new fields: volume, openInterest, lastTradeDate in options chain description. (7) Update `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` references for new fields. (8) Remove bid_iv/ask_iv references (not available). (9) Remove OPRA symbol references — yfinance uses `contractSymbol`. |
+| `tv_cash_secured_put_instructions.py` | 1,058 | Same pattern as covered call. Additionally: remove CSP-specific pivot point strike selection guidance (S1-S3). Replace with SMA/support level based guidance. |
+| `tv_open_call_assessment_instructions.py` | 536 | Rename → `open_call_assessment_instructions.py`. Update data source references. |
+| `tv_open_call_roll_instructions.py` | 370 | Rename → `open_call_roll_instructions.py`. Update references. |
+| `tv_open_put_assessment_instructions.py` | 534 | Rename → `open_put_assessment_instructions.py`. Update references. |
+| `tv_open_put_roll_instructions.py` | 373 | Rename → `open_put_roll_instructions.py`. Update references. |
+| `tv_open_call_chat_instructions.py` | 335 | Rename → `open_call_chat_instructions.py`. |
+| `tv_open_put_chat_instructions.py` | 382 | Rename → `open_put_chat_instructions.py`. |
+| `tv_supervisor_instructions.py` | 545 | Rename → `supervisor_instructions.py`. Remove TradingView-specific quality checks. |
+| `tv_alpha_instructions.py` | 491 | Rename → `alpha_instructions.py`. |
+| `tv_report_instructions.py` | 96 | Rename → `report_instructions.py`. |
+| `tv_summary_instructions.py` | 172 | Rename → `summary_instructions.py`. |
+
+**Simplification opportunity:** With yfinance, agent instructions get SIMPLER:
+- Remove all "if section shows [ERROR: ...]" fallback logic (no more 403s)
+- Remove "pivot points" references entirely (we don't compute those)
+- Remove warnings about "TradingView API field name changes"
+- Remove dual-parsing guidance ("tab-separated table data" descriptions)
+- Add: volume/OI liquidity filtering guidance ("avoid contracts with OI < 100 or volume < 10")
+- Add: `lastTradeDate` staleness check ("skip contracts not traded in 3+ days")
+
+### 1.5 Files UNCHANGED
+
+| File | Reason |
+|------|--------|
+| `src/context.py` | Reads from CosmosDB, no data source dependency |
+| `src/cosmos_db.py` | Minor changes only (removing TV health methods) |
+| `src/telegram_notifier.py` | Notification layer, data-source agnostic |
+| `src/report_agent.py` | Uses instructions + runner, no direct data fetch |
+| `src/__init__.py` | Package init |
+
+---
+
+## 2. Architecture Decisions
+
+### Decision 1: New `yfinance_data_provider.py` (not extending `yfinance_fetcher.py`)
+
+**Decision:** Create a NEW `yfinance_data_provider.py` as the high-level orchestrator. Keep `yfinance_fetcher.py` as the low-level yfinance wrapper.
+
+**Rationale:**
+- `yfinance_fetcher.py` is a clean, single-responsibility wrapper (rate limiting + retries). It should stay that way.
+- The new provider handles: (a) orchestrating multiple data types, (b) formatting data for agent consumption, (c) options chain enrichment with Greeks, (d) technicals computation, (e) caching.
+- Clean separation: `yfinance_fetcher.py` knows yfinance. `yfinance_data_provider.py` knows our agents' data contract.
+
+**Interface:**
+```python
+class YFinanceDataProvider:
+    def __init__(self, fetcher: YFinanceFetcher, config: Config):
+        self.fetcher = fetcher
+        self.greeks = GreeksCalculator()
+        self.technicals = TechnicalsCalculator()
+
+    async def fetch_all(self, symbol: str) -> dict:
+        """Returns {"overview": str, "technicals": str, "forecast": str,
+                     "dividends": str, "options_chain": str}
+        Same keys as old tv_data_fetcher — agents receive identical structure."""
+
+def create_provider(config: Config) -> YFinanceDataProvider:
+    """Factory function — drop-in replacement for create_fetcher()."""
+```
+
+### Decision 2: Options Chain Format — KEEP existing structure, ADD new fields
+
+**Decision:** Keep the existing `options_chain_parser.py` output format (expiration-keyed → strike-keyed dicts) but generate it directly from yfinance DataFrames instead of parsing raw scanner JSON.
+
+**Rationale:**
+- All agent instructions reference this format. Changing it means rewriting 6,500+ lines of instructions.
+- The format is actually good: hierarchical, easy to look up contracts by expiration + strike.
+- Simply build the same dict structure from `ticker.option_chain()` DataFrames.
+
+**Changes to schema:**
+```python
+# KEEP these fields (computed where needed):
+"strike", "bid", "ask", "mid",  # mid = (bid+ask)/2
+"iv", "delta", "gamma", "theta", "vega", "rho",
+"currency", "expiration", "option_type",
+
+# ADD new fields (yfinance bonus):
+"volume", "openInterest", "lastPrice", "lastTradeDate",
+"inTheMoney", "contractSymbol",
+
+# REMOVE these fields (not available/needed):
+"opra_symbol",  # replaced by contractSymbol
+"bid_iv", "ask_iv",  # not available from yfinance
+```
+
+**Critical:** The `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` in `options_chain_parser.py` moves to `yfinance_data_provider.py` (updated version). All consumers import from there.
+
+### Decision 3: Greeks — Separate `greeks_calculator.py` module
+
+**Decision:** Dedicated module, not inline.
+
+**Rationale:**
+- Greeks computation is pure math — no I/O, no state, easily testable
+- Reused by both options chain building AND potential future analytics
+- Clear dependency: `py_vollib` is isolated here
+- ~80 lines, well-defined interface
+
+**Interface:**
+```python
+class GreeksCalculator:
+    def __init__(self, risk_free_rate: float = None):
+        """If rate is None, fetch from ^TNX via yfinance on first call."""
+
+    def compute(self, flag: str, S: float, K: float, T: float,
+                sigma: float) -> dict:
+        """Returns {"delta": ..., "gamma": ..., "theta": ...,
+                    "vega": ..., "rho": ...}"""
+```
+
+**Risk-free rate strategy:** Fetch `^TNX` (10Y Treasury) once per run, cache for session. Fallback to 4.5% if unavailable.
+
+### Decision 4: Technicals — `pandas-ta` + dedicated module
+
+**Decision:** Create `technicals_calculator.py` using `pandas-ta` for indicator computation. Consolidate with `dgi_metrics.py` existing indicators.
+
+**Rationale:**
+- `dgi_metrics.py` already computes RSI, SMA, Bollinger — but only 3 indicators
+- Agents need 15+ indicators (Stochastic, CCI, ADX, MACD, Williams %R, etc.)
+- Hand-coding all 15 is error-prone and ~400 lines. `pandas-ta` does them in 1 line each.
+- `pandas-ta` is lightweight, well-maintained, and we already depend on pandas/numpy.
+
+**Migration path for `dgi_metrics.py`:**
+- Keep `dgi_metrics.py` for DGI-specific scoring logic (quality scores, categorization, filters)
+- Move raw indicator computation to `technicals_calculator.py`
+- `dgi_metrics.py` calls `technicals_calculator.py` for RSI/SMA/Bollinger instead of computing them inline
+- This avoids duplicate indicator code
+
+**Signal interpretation:** Port `_oscillator_signal()` and `_ma_signal()` from `tv_data_fetcher.py` into `technicals_calculator.py`. These convert raw values to Buy/Sell/Neutral. Then build composite `Recommend.All` / `Recommend.Other` / `Recommend.MA` equivalents.
+
+**Pivot points:** DROP. Pivot points (Classic, Fibonacci, Camarilla, Woodie, DM) are TradingView-specific pre-computed data. They are easily computed from daily OHLCV, BUT the question is: **do agents actually need them?**
+
+Analysis: Covered call instructions say "use R1-R3 as strike targets". CSP instructions say "use S1-S3 as strike targets". These are useful but can be replaced with simpler guidance: "set strike near resistance levels (above current SMA-50/200)" for calls, "set strike near support levels (below SMA-50/200)" for puts. **Decision: Omit pivot points initially. Add in Phase 5 if agents struggle with strike selection.**
+
+### Decision 5: Caching — Simplify
+
+**Decision:** Replace `tv_cache.py` (async locks, per-resource TTLs) with a simpler TTL cache in `YFinanceDataProvider`.
+
+**Rationale:**
+- `tv_cache.py` was designed around TradingView's slow, fragile scraping (15-second Playwright fetches, hourly pre-warm scheduler)
+- yfinance calls complete in 1-3 seconds per symbol — caching is less critical
+- The options chain scheduler in `main.py` can still pre-warm if desired, but writes to a simpler dict cache
+- No need for per-resource TTLs or async locks
+
+**Implementation:** Simple `{symbol: {data: dict, timestamp: float}}` dict with configurable TTL. The options chain scheduler populates it; agent runs check freshness before re-fetching.
+
+### Decision 6: Agent Instruction File Renaming
+
+**Decision:** Rename all `tv_*_instructions.py` → drop the `tv_` prefix.
+
+**Rationale:**
+- "TV" stood for TradingView. That's gone.
+- The instructions describe the agent's strategy logic, not the data source.
+- Cleaner imports: `from .covered_call_instructions import COVERED_CALL_INSTRUCTIONS`
+
+**git mv** all 14 files in a single commit (rename-only) to preserve git history.
+
+---
+
+## 3. Migration Phases
+
+### Phase 1: Foundation — New Modules (Parallelizable, 1 day)
+
+**Owner: Linus (Quant Dev)**
+
+Create the three new modules with full test coverage:
+
+1. **`src/greeks_calculator.py`** (~80 lines)
+   - Black-Scholes Greeks via `py_vollib`
+   - Risk-free rate fetcher (^TNX with fallback)
+   - Unit tests: known option → known Greeks (compare to reference values)
+
+2. **`src/technicals_calculator.py`** (~250 lines)
+   - All oscillator computations from OHLCV
+   - All MA computations (SMA/EMA 10-200, Ichimoku, VWMA, Hull MA)
+   - Signal interpretation (Buy/Sell/Neutral)
+   - Composite recommendation scores
+   - Port `_oscillator_signal()` / `_ma_signal()` from `tv_data_fetcher.py`
+   - Unit tests: known OHLCV → known indicator values
+
+3. **`src/yfinance_data_provider.py`** (~500 lines)
+   - `fetch_all(symbol)` → returns dict with 5 keys matching old format
+   - Options chain builder: DataFrame → structured dict with Greeks
+   - Overview/Forecast/Dividends formatters
+   - Technicals formatter using `TechnicalsCalculator`
+   - Simple TTL cache
+   - Integration test: fetch real data for AAPL, verify all 5 sections populated
+
+4. **Update `requirements.txt`**
+   - Add `py-vollib>=1.0.0`
+   - Add `pandas-ta>=0.3.0`
+   - Do NOT remove playwright/bs4 yet (old code still runs)
+
+**Testing strategy:** New modules are self-contained. Test with real yfinance calls (AAPL, MSFT) to verify data shapes. Mock yfinance for unit tests of formatting/computation.
+
+**Can run in parallel with:** Nothing depends on this yet. Linus works independently.
+
+### Phase 2: Core Pipeline Swap (Sequential, 1.5 days)
+
+**Owner: Rusty (Agent Dev)**  
+**Depends on:** Phase 1 complete
+
+Replace the data pipeline in agent execution:
+
+1. **`src/agent_runner.py`** — The big one
+   - Replace `from .tv_cache import get_tv_cache` → remove
+   - Replace `fetcher.fetch_all()` → `provider.fetch_all()`
+   - Remove all `tv_403` error handling (15+ lines per method, two methods)
+   - Change message template: `=== PRE-FETCHED TRADINGVIEW DATA ===` → `=== PRE-FETCHED MARKET DATA ===`
+   - Section headers: `--- OVERVIEW PAGE ---` → `--- OVERVIEW ---` etc.
+   - Update `_format_options_chain()` — no longer parses raw text, receives structured dict
+   - Update `_format_current_contract_chain()` — same
+   - Keep `_validate_premium_against_chain()` — works on parsed dict already
+   - Update telemetry: `"tv_fetch"` → `"data_fetch"`
+   - Remove `fetch_stats` tracking (no more per-resource timing from TV)
+
+2. **4 agent wrappers** (covered_call, cash_secured_put, open_call_monitor, open_put_monitor)
+   - Replace `from .tv_data_fetcher import create_fetcher` → `from .yfinance_data_provider import create_provider`
+   - Replace `async with create_fetcher(config) as fetcher:` → `provider = create_provider(config)` (no async context manager needed)
+   - Replace `tradingview_randomize_symbols` → `config.randomize_symbols`
+
+3. **`src/main.py`**
+   - Update `_run_options_chain_fetch_async()` to use `YFinanceDataProvider`
+   - Remove `from .tv_data_fetcher import create_fetcher`
+   - Remove `from .tv_cache import get_tv_cache`
+
+4. **`src/config.py`**
+   - Remove 6 `tradingview_*` properties
+   - Add `yfinance_requests_per_minute`, `yfinance_max_retries`, `randomize_symbols`
+
+5. **`config.yaml`**
+   - Remove `tradingview:` section
+   - Add `yfinance:` section
+
+6. **`web/app.py`**
+   - Replace all `tv_data_fetcher` / `tv_cache` imports
+   - Update fetch preview endpoint
+   - Update cache management endpoints
+   - Update debug page
+
+**Testing strategy:**
+- Run a single symbol analysis (e.g., AAPL covered call) end-to-end
+- Verify agent receives all 5 data sections
+- Verify premium validation still catches mismatches
+- Verify options chain format is parseable by agents
+- Compare agent output quality to a baseline from TradingView era
+
+### Phase 3: Instruction Files Update (Parallelizable, 1 day)
+
+**Owner: Linus (Quant Dev) — he owns instruction content**  
+**Depends on:** Phase 2 complete (need to know exact data format)
+
+1. **Rename all 14 `tv_*` instruction files** (single git mv commit):
+   ```
+   tv_covered_call_instructions.py → covered_call_instructions.py
+   tv_cash_secured_put_instructions.py → cash_secured_put_instructions.py
+   tv_open_call_assessment_instructions.py → open_call_assessment_instructions.py
+   tv_open_call_roll_instructions.py → open_call_roll_instructions.py
+   tv_open_call_chat_instructions.py → open_call_chat_instructions.py
+   tv_open_put_assessment_instructions.py → open_put_assessment_instructions.py
+   tv_open_put_roll_instructions.py → open_put_roll_instructions.py
+   tv_open_put_chat_instructions.py → open_put_chat_instructions.py
+   tv_supervisor_instructions.py → supervisor_instructions.py
+   tv_alpha_instructions.py → alpha_instructions.py
+   tv_report_instructions.py → report_instructions.py
+   tv_summary_instructions.py → summary_instructions.py
+   ```
+
+2. **Update all imports** in files that reference old names (agent_runner.py, agent wrappers, web/app.py, main.py)
+
+3. **Content updates** (consistent across all instruction files):
+   - "pre-fetched from TradingView" → "pre-fetched"
+   - Remove browser tool disclaimers
+   - Remove TV-specific field format descriptions
+   - Remove pivot point references (Covered Call: R1-R3 for strikes; CSP: S1-S3 for strikes)
+   - Replace with: "use SMA-50/200 and recent support/resistance levels for strike selection"
+   - Add liquidity guidance: "Prefer contracts with openInterest ≥ 100 and volume ≥ 10"
+   - Add staleness check: "Skip contracts with lastTradeDate > 3 days ago"
+   - Update OPTIONS_CHAIN_SCHEMA_DESCRIPTION: add volume, openInterest, lastTradeDate, contractSymbol; remove opra_symbol, bid_iv, ask_iv
+   - Remove "[ERROR: ...]" fallback logic
+   - Remove "TradingView API field name change" warnings
+
+**Testing strategy:** Run all 4 agent types on 2-3 symbols. Review agent output for coherence. Verify agents correctly use volume/OI data in their analysis.
+
+### Phase 4: Cleanup & Deletion (Sequential, 0.5 days)
+
+**Owner: Rusty (Agent Dev)**  
+**Depends on:** Phases 2 and 3 complete and verified
+
+1. **Delete files:**
+   - `src/tv_data_fetcher.py` (1,611 lines)
+   - `src/tv_cache.py` (125 lines)
+   - `src/stockanalysis_fetcher.py` (192 lines)
+   - `src/options_chain_parser.py` (684 lines)
+   - `src/tv_open_call_instructions.py` (589 lines — legacy, verify unused)
+   - `src/tv_open_put_instructions.py` (603 lines — legacy, verify unused)
+   - `TRADINGVIEW_ANTI_BOT.md`
+
+2. **Update `requirements.txt`:**
+   - Remove `playwright>=1.40.0`
+   - Remove `beautifulsoup4>=4.12.0`
+
+3. **Update `Dockerfile`:**
+   - Remove `RUN playwright install chromium --with-deps`
+   - Update comment: remove "Playwright for TradingView data fetching"
+
+4. **Update `src/cosmos_db.py`:**
+   - Remove `get_tv_health_status()` / `set_tv_health_status()` methods
+
+5. **Update `src/dgi_screener.py`:**
+   - Remove `_apply_stockanalysis_overrides()` function
+   - Remove `from .stockanalysis_fetcher import fetch_dividend_data`
+   - Review `EXCHANGE_MAP` — keep if still needed for CosmosDB symbol format
+
+6. **Update `README.md`:**
+   - Remove TradingView setup instructions
+   - Remove Playwright/Chromium dependency notes
+   - Remove anti-bot troubleshooting section
+   - Update data source description to yfinance
+   - Update architecture diagram if present
+
+7. **Consolidate `dgi_metrics.py`:**
+   - Replace inline RSI/SMA/Bollinger with calls to `technicals_calculator.py`
+   - Avoid duplicate indicator implementations
+
+**Testing strategy:** Full regression — run all 4 agent types + DGI screener. Verify Docker build succeeds without Playwright. Verify image size reduction.
+
+### Phase 5: Optimization & Hardening (Parallelizable, 1 day)
+
+**Owner: Linus + Rusty**  
+**Depends on:** Phase 4 complete
+
+1. **Options chain fetching optimization:**
+   - Don't fetch all 23 expirations — filter to relevant DTE range (7-90 days) before fetching chains
+   - Implement batch caching: pre-warm cache for all symbols at scheduled intervals
+   - Rate limit tuning: find optimal RPM for Yahoo's current limits
+
+2. **Agent output quality validation:**
+   - Run both agents on 10+ symbols, compare output to TradingView-era baselines
+   - Check: Are agents selecting reasonable strikes? Are premiums accurate? Are Greeks in expected ranges?
+   - Verify delta filtering still works (0.15-0.40 range for OTM)
+
+3. **Pivot points (conditional):**
+   - If agents struggle with strike selection without pivot points, add Classic pivot computation to `technicals_calculator.py`
+   - Simple formula: P = (H+L+C)/3, R1 = 2P-L, S1 = 2P-H, etc.
+
+4. **Monitoring:**
+   - Add yfinance-specific telemetry (fetch time, symbols processed, rate limit hits)
+   - Add health check for yfinance availability (try fetch ^GSPC on startup)
+
+---
+
+## 4. Risk Assessment
+
+### 4.1 What Could Break
+
+| Risk | Severity | Mitigation |
+|------|----------|-----------|
+| **Options chain format mismatch** — agents can't parse new chain structure | HIGH | Keep exact same dict structure. Phase 2 testing catches this immediately. |
+| **Greeks accuracy divergence** — our computed Greeks differ from TradingView's | MEDIUM | Use `py_vollib` (handles American options). Differences within trading tolerance. Validate against known values in Phase 1 tests. |
+| **Missing pivot points** — agents give worse strike selection | MEDIUM | Replace with SMA-based guidance. Monitor output quality in Phase 5. Add pivot computation if needed. |
+| **Rate limiting** — Yahoo throttles aggressive fetching | LOW | Already have rate limiter in `yfinance_fetcher.py`. Start conservative (30 RPM), tune up. |
+| **Import chain breaks** — renaming 14 instruction files creates import errors | LOW | Do renames in a single commit. Use `grep -r` to find ALL imports before committing. |
+| **DGI screener loses SA cross-check** — dividend growth years less accurate | LOW | `calculate_years_consecutive_increases()` is well-tested. Validate against Dividend Aristocrat list. |
+| **Agent prompt drift** — instructions reference removed features | MEDIUM | Systematic search-and-replace across all instruction files. Review each one individually. |
+
+### 4.2 What Needs Careful Testing
+
+1. **Options chain end-to-end:** Fetch AAPL chain → compute Greeks → build structured dict → inject into agent → verify agent can read bid/ask/delta correctly
+2. **Premium validation:** Ensure `_validate_premium_against_chain()` works with new dict keys (no field name changes if we're careful)
+3. **Monitor agents (2-phase):** Phase 1 assessment receives current contract data → Phase 2 roll receives filtered chain. Both flows must work.
+4. **DGI screener:** Run with SA overrides removed. Compare top-20 results to a known-good baseline.
+5. **Docker build:** Build image, verify no Playwright traces, verify image size reduction.
+
+### 4.3 Rollback Plan
+
+**There is no rollback.** User directive: NO fallback, no keeping old code.
+
+**Mitigation for this constraint:**
+- Each phase has its own verification gate. Do NOT proceed to next phase until current phase is verified.
+- Phase 1 (new modules) can be built and tested completely independently — zero risk to existing system.
+- Phase 2 (pipeline swap) is the critical cut. Do it on a branch, test thoroughly, merge only when all agents produce acceptable output.
+- Phase 4 (deletion) is the point of no return. Only execute after Phase 2+3 are verified on the branch.
+- Git history preserves all deleted files if emergency recovery is needed (even if deleted code isn't "kept").
+
+---
+
+## 5. Impact on Agent Instructions
+
+### 5.1 Sections Referencing TradingView-Specific Data
+
+**Covered Call Instructions (`tv_covered_call_instructions.py`):**
+- Line ~5: "Data is pre-fetched from TradingView via Playwright"
+- Lines ~18-21: "All market data has been pre-fetched from TradingView... You do NOT have any browser tools."
+- Lines ~22-24: "Pre-calculated technicals — TradingView provides RSI, MACD... with Buy/Sell/Neutral signals already computed"
+- Lines ~25: "Pivot points — Classic, Fibonacci, Camarilla, Woodie, DM"
+- Lines ~30-70: Phase 1 data section descriptions (5 sections with TV-specific formatting)
+- Lines ~45-55: Technicals section describes "Tab-separated table data" (TV scanner format)
+- Options chain: references "OPRA:MSFT260427C475.0" (OPRA format specific to TV)
+
+**CSP Instructions (`tv_cash_secured_put_instructions.py`):**
+- Same header/data source blocks as covered call
+- Additional: "S1-S3 pivot points as strike price targets" (TV-specific guidance)
+- Oversold detection references TV pre-computed values
+
+**Monitor Instructions (assessment + roll for both call/put):**
+- All reference TradingView as data source
+- All describe the 5-section data format with TV-specific details
+- Roll instructions reference TV chain format for buyback cost lookup
+
+**Supervisor/Alpha Instructions:**
+- Reference TradingView data quality checks
+- May reference specific TV field names
+
+### 5.2 Simplifications Possible
+
+1. **Remove error handling prose:** ~15-20 lines per instruction file about "[ERROR: ...]" fallback and "if data unavailable" scenarios. yfinance either works or raises an exception — no partial 403 failures.
+
+2. **Remove browser tool disclaimers:** "You do NOT have any browser tools" appears in every instruction file. With yfinance, there's no browser in the architecture at all.
+
+3. **Remove TV scanner format descriptions:** The lengthy descriptions of "Tab-separated table data: Name\tValue\tAction" format for technicals can be replaced with simple "JSON dict with indicator names as keys and values/signals as nested dicts."
+
+4. **Add liquidity intelligence:** New instructions can include: "Filter out options with openInterest < 100 or no recent trades (lastTradeDate > 3 days ago). These are illiquid and may have unreliable pricing." This was impossible with TradingView which didn't provide OI/volume.
+
+5. **Simplify strike selection:** Instead of "use R1/R2/R3 pivot points", guide agents with: "Select strikes near or above the 50-day SMA for calls (below for puts). Use the delta range 0.15-0.35 as primary selection criteria."
+
+6. **Add staleness detection:** "If a contract's lastTradeDate is more than 3 trading days ago, flag it as potentially stale and prefer contracts with recent activity."
+
+---
+
+## 6. Dependency Graph
+
+```
+Phase 1 (Foundation)        ← Independent, no prerequisites
+    │
+    ▼
+Phase 2 (Pipeline Swap)     ← Requires Phase 1 modules
+    │
+    ├──▶ Phase 3 (Instructions)  ← Can start after Phase 2 data format is finalized
+    │
+    ▼
+Phase 4 (Cleanup)            ← Requires Phase 2 + Phase 3 verified
+    │
+    ▼
+Phase 5 (Optimization)       ← Requires Phase 4, but parts can overlap with Phase 3
+```
+
+**Parallelism opportunities:**
+- Phase 1: Linus builds all 3 modules independently
+- Phase 3: Can overlap with Phase 2 testing (instruction content is mostly independent of implementation)
+- Phase 5: Optimization can start as soon as Phase 2 is verified (doesn't need file deletions)
+
+---
+
+## 7. Config Changes Summary
+
+### Remove from `config.yaml`:
+```yaml
+# DELETE this entire section:
+tradingview:
+  request_delay_min: 1.0
+  request_delay_max: 3.0
+  warmup_enabled: false
+  max_403_retries: 3
+  retry_delays: [5, 15, 45]
+  randomize_symbols: true
+```
+
+### Add to `config.yaml`:
+```yaml
+yfinance:
+  requests_per_minute: 60    # Rate limit for yfinance API calls
+  max_retries: 3             # Retry attempts per symbol on failure
+  randomize_symbols: true    # Shuffle symbol order each run
+  cache_ttl: 300             # Data cache TTL in seconds (5 min default)
+```
+
+### Update `options_chain_scheduler`:
+```yaml
+options_chain_scheduler:
+  enabled: true
+  cron: "0 * * * *"     # Keep hourly — now uses yfinance (faster)
+  max_expirations: 8    # Limit expirations to fetch (nearest N by DTE)
+```
+
+---
+
+## 8. New Dependencies Summary
+
+| Add | Version | Purpose | Size Impact |
+|-----|---------|---------|-------------|
+| `py-vollib` | >=1.0.0 | Black-Scholes Greeks (delta, gamma, theta, vega, rho) | ~2MB |
+| `pandas-ta` | >=0.3.0 | Technical indicators (15+ oscillators/MAs) | ~5MB |
+
+| Remove | Purpose | Size Impact |
+|--------|---------|-------------|
+| `playwright` | >=1.40.0 | TradingView browser automation | **-200MB+** (including Chromium) |
+| `beautifulsoup4` | >=4.12.0 | HTML parsing for TV/SA | -2MB |
+
+**Net image size change: ~195MB reduction.** Build time improvement: ~30-60 seconds (no Chromium download).
+
+---
+
+## 9. Work Assignment
+
+| Phase | Owner | Duration | Blocker |
+|-------|-------|----------|---------|
+| Phase 1: Foundation modules | **Linus** | 1 day | None |
+| Phase 2: Pipeline swap | **Rusty** | 1.5 days | Phase 1 |
+| Phase 3: Instructions update | **Linus** | 1 day | Phase 2 format finalized |
+| Phase 4: Cleanup & deletion | **Rusty** | 0.5 days | Phase 2+3 verified |
+| Phase 5: Optimization | **Linus + Rusty** | 1 day | Phase 4 |
+
+**Total: 4-5 days** (with parallelism between Phase 3 and Phase 2 testing)
+
+---
+
+## 10. Definition of Done
+
+- [ ] All 4 agent types produce valid JSON output for at least 5 symbols each
+- [ ] Greeks values are within 5% of reference values for known test cases
+- [ ] Options chain includes volume, openInterest, and lastTradeDate
+- [ ] No TradingView/Playwright/BeautifulSoup references remain in codebase
+- [ ] Docker image builds without Playwright, image size reduced by >100MB
+- [ ] DGI screener produces top-40 rankings without SA fallback
+- [ ] All instruction files renamed (no `tv_` prefix)
+- [ ] `config.yaml` has no `tradingview:` section
+- [ ] `requirements.txt` has no `playwright` or `beautifulsoup4`
+- [ ] README updated with yfinance data source description
+
+---
+
+## Phase 2 Completed — Implementation Decisions
+
+### Rusty Phase 2 — Pipeline Swap: TradingView → yfinance
+**Status:** ✅ Completed (2026-07)  
+**Agent:** Rusty  
+**Scope:** Replace ALL TradingView data fetching with yfinance provider across entire application
+
+#### Decisions Made
+
+1. **Clean cut — no fallback**
+   - Removed all TradingView import paths and error handling (403, Playwright) from active code
+   - Old `tv_data_fetcher.py` and `tv_cache.py` remain in repo but are unreferenced
+
+2. **Exchange prefix removed from fetch calls**
+   - Old: `f"{exchange}-{symbol}"` or `f"{exchange}:{symbol}"` → New: plain `symbol`
+   - Exchange field still stored in CosmosDB, used for display/context only
+
+3. **`parse_options_chain()` replaced with `json.loads()`**
+   - yfinance provider returns pre-structured JSON matching same schema
+   - HTML parser no longer needed; filter functions still work unchanged
+
+4. **Provider singleton pattern**
+   - web/app.py: `app.state.yf_provider` initialized at startup
+   - Agent wrappers: one `create_provider()` call per batch, shared across symbols
+   - Built-in in-memory cache (keyed by symbol, TTL from config)
+
+5. **API backward compatibility**
+   - `preferences` dict key `"tradingview"` kept to avoid breaking frontend
+   - Now controls yfinance market data inclusion
+
+6. **`has_data_error` / `data_error` flag removed**
+   - TV-specific 403 tracking deleted entirely
+   - yfinance raises exceptions on failure (no partial data with error flags)
+
+#### Implementation Details
+- Files changed: 13 (391+/451-)
+- config.yaml: tradingview → yfinance section
+- Affected modules: agent_runner, covered_call_agent, cash_secured_put_agent, open_call_monitor_agent, open_put_monitor_agent, main.py, web/app.py
+- Templates cleaned of TV/Playwright references
+
+---
+
+### Linus Phase 2 — Options Filters Extraction + README
+**Status:** ✅ Completed (2026-07)  
+**Agent:** Linus  
+**Scope:** Parallel Phase 2 track — Standalone filter module + yfinance documentation
+
+#### Decision 1: Options Chain Filters as Standalone Module
+
+**Created:** `src/options_chain_filters.py` (16.8 KB)
+
+- Extracted 5-function filter pipeline from `options_chain_parser.py`
+- Functions: `filter_options_chain_by_type`, `filter_options_chain_for_position`, `filter_options_chain_by_delta`, `filter_options_chain_by_roll_direction`, `format_roll_candidates_table`
+- Works on unified dict format (YYYYMMDD→strike→contract) from both TV parser and yfinance provider
+- Zero dependency on `options_chain_parser.py` — fully self-contained
+
+**Rationale:**
+- Filter functions work on provider-agnostic structured format
+- Keeping in `options_chain_parser.py` couples unnecessarily to TV parser
+- Standalone enables clean imports without pulling TV-specific code
+
+**Migration Note:**
+- Existing imports from `options_chain_parser` still work (backward compat)
+- New code should import from `options_chain_filters`
+
+#### Decision 2: README — yfinance as Single Data Source
+
+**Updated:** README.md — Comprehensive yfinance migration documentation
+
+**Changes:**
+- Opening: yfinance direct API, no browser/scraping/auth
+- Architecture: Yahoo Finance as data source
+- Pre-fetch section: Renamed to "Pre-fetch Architecture (yfinance)"
+- Cache section: Renamed to "Data Cache", describes built-in TTL + rate limiting
+- Setup: Removed `playwright install chromium`, added `py-vollib`, `pandas-ta`
+- Docker: Removed Playwright/Chromium pre-install
+- Troubleshooting: Replaced "Playwright / Chromium Issues" with "Data Fetching Issues"
+- Removed all TradingView/Playwright/BS4 references
+
+**Impact:**
+- Documentation, onboarding, Docker setup fully aligned with yfinance architecture
+- Eliminates confusion about scraping capabilities and requirements
+
+---
+
+## Phase 2 Summary
+
+Both Rusty and Linus tracks completed in parallel:
+- **Rusty:** 13 files modified, full pipeline swap to yfinance, clean cut, singleton provider, backward API compat
+- **Linus:** Filters module extracted (provider-agnostic), README fully refreshed, yfinance as canonical data source
+- **Result:** Application is yfinance-native, no TradingView/Playwright/scraping in active codebase
+- **Tests:** 127 passed, 22 failed (old TV tests slated for Phase 4 deletion)
+
+---
+
+## Phase 3: Instruction File Renames
+
+**Date:** 2026-05-14  
+**Agent:** Linus  
+
+### Decision: Keep Variable Names As-Is
+
+**Decision:** Do NOT rename internal constants (e.g., `TV_SUMMARY_INSTRUCTIONS`, `TV_REPORT_INSTRUCTIONS`, `TV_CASH_SECURED_PUT_INSTRUCTIONS`).
+
+**Rationale:**
+- These are string constants exported from instruction files (the actual prompt text)
+- Renaming would require updates across 20+ import sites and dependent modules
+- Low semantic value: the variable name doesn't affect runtime behavior
+- Marginal clarity gain vs. high refactor cost (low ROI)
+
+**Alternative considered:**
+- Rename all constants to drop `TV_` prefix (e.g., `SUMMARY_INSTRUCTIONS`)
+- Rejected: Would ripple through agent_runner.py lazy-load patterns, agent modules, web/app.py
+- Overkill for string constants
+
+**Execution:**
+✅ Completed Phase 3 with minimal scope creep:
+- File renames: 14 files via `git mv` (history preserved)
+- Import updates: 10 sites across 6 modules
+- Tests: 96 passed, no regressions
+- Commit: 2709b75
+
+**Future Consideration:**
+If/when codebase matures and these constants become "legacy" (e.g., migration to structured prompt templates), revisit full variable rename as part of broader cleanup. For now: acceptable naming debt.
+
+---
+
+## Phase 4: Cleanup (Delete Obsolete Files, Strip Chromium)
+
+**Date:** 2026-05-14  
+**Agent:** Rusty  
+
+### Decision: Stubbed `_apply_stockanalysis_overrides` instead of deleting
+
+**Context:** stockanalysis_fetcher.py was deleted as part of Phase 4 cleanup. The function `_apply_stockanalysis_overrides()` in `dgi_screener.py` is called from 2 locations.
+
+**Decision:** Converted the function to a no-op stub rather than removing it and its call sites. This keeps the code path intact if a future data enrichment source is added, and avoids modifying the scoring pipeline logic unnecessarily.
+
+**Alternatives considered:**
+1. Delete function + remove all call sites → higher risk of breaking scoring pipeline flow
+2. Keep function with try/except ImportError → messy, hides real errors
+
+**Status:** Implemented in commit db7b4ff.
+
+**Phase 4 Summary:**
+- Deleted 8 obsolete files (-3,807 lines)
+- Removed playwright+bs4 from requirements.txt
+- Stripped Chromium from Dockerfile (~400MB savings)
+- Stubbed stockanalysis as no-op
+- All 96 tests pass, 0 failures
+- Commit: db7b4ff
+
+---
+
+## Phase 5: Instruction File Content Update + Provider-Agnostic Terminology
+
+**Date:** 2026-05-14  
+**Agents:** Linus (Quant Dev) + Rusty (Agent Dev)  
+
+### Decision: Instruction File Content Updated to Yahoo Finance (Linus)
+
+**Context:** After Phase 3 renamed the 14 `tv_*` instruction files and Phase 4 removed the TradingView/Playwright code, the instruction file *content* still referenced TradingView as the data source. This creates confusion for LLM agents.
+
+**Decision:** Updated all 9 instruction files that contained TradingView/Playwright references (43 replacements total):
+
+| Pattern | Replacement |
+|---------|-------------|
+| "TradingView" (data source) | "Yahoo Finance" |
+| "via Playwright" | "via yfinance" |
+| "browser tools" | "data fetching tools" |
+| "TradingView provides RSI..." | "computed via pandas-ta" |
+| "TradingView Pre-Fetched Data" | "Pre-Fetched Data" |
+| "TradingView provides pre-analyzed" | "The provider includes pre-analyzed" |
+| "pre-fetched TradingView data" | "pre-fetched market data" |
+| "Analyze the TradingView data" | "Analyze the market data" |
+
+**Files unchanged (no TradingView references):**
+- `open_call_roll_instructions.py`
+- `open_put_roll_instructions.py`
+- `alpha_instructions.py`
+- `supervisor_instructions.py`
+- `summary_instructions.py`
+
+**Preserved:**
+- All trading logic, thresholds, DTE rules, delta targets
+- Variable names (`TV_CASH_SECURED_PUT_INSTRUCTIONS`, etc.)
+- Tool-call prohibition language
+
+**Verification:** 96 tests pass, zero remaining TradingView/Playwright/browser references.
+
+### Decision: Provider-Agnostic Plumbing Terminology (Rusty)
+
+**Problem:** Remaining references to "TradingView", "Playwright", "BeautifulSoup", "stockanalysis" in plumbing files created ambiguity after Phase 4 deletion.
+
+**Decision:** Remove all stale references from plumbing and adopt provider-agnostic terminology:
+- Replace "TradingView" with "market data" or "data provider"
+- Replace "Playwright" with "yfinance"
+- Delete unused functions entirely (`_apply_stockanalysis_overrides`) rather than stubs
+- Rename `preferences["tradingview"]` → `preferences["market_data"]`
+
+**Rationale:**
+1. **Dead code removal > stubs:** `_apply_stockanalysis_overrides()` no-op was stubbed in Phase 4. Full deletion signals intent, eliminates maintenance burden.
+2. **Provider-agnostic naming:** If yfinance is ever replaced, code using "market data" requires no changes. Reduces future migration effort.
+3. **Separation of concerns:** Instructions (Linus) keep "TradingView"; plumbing (Rusty) uses neutral terminology. Clear boundary prevents conflicts.
+4. **Call sites cleaned up:** Both call sites to `_apply_stockanalysis_overrides()` (lines 113, 266 in dgi_screener.py) removed, not left as orphans.
+
+**Affected Components:**
+- `cosmos_db.py`: Health status terminology updated
+- `dgi_screener.py`: Removed stockanalysis function + call sites
+- `main.py`: Scheduler message updated
+- `options_chain_filters.py`: Module docstring cleaned
+- `report_agent.py`: Context description updated
+- `web/app.py`: Preference key renamed for consistency
+
+**Trade-offs:**
+- `preferences["market_data"]` replaces `preferences["tradingview"]` (internal only, not exposed to API)
+- Instruction files still use "TradingView" terminology for backward compat, frontend stays compatible
+
+**Outcomes:**
+- ✅ All 96 tests pass
+- ✅ No dead code remains
+- ✅ Plumbing terminology now provider-agnostic
+- ✅ Clear separation maintained with instruction files

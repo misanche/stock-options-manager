@@ -21,7 +21,7 @@
     {% if telemetry_stats and (telemetry_stats.get('tv_fetch') or telemetry_stats.get('agent_run')) %}
     <div style="padding: 0.75rem 1.25rem;">
         {% if telemetry_stats.get('tv_fetch') %}
-        <h3 style="margin: 0.5rem 0; font-size: 0.95rem; color: var(--text-muted, #8d969e);">TradingView Fetch Stats</h3>
+        <h3 style="margin: 0.5rem 0; font-size: 0.95rem; color: var(--text-muted, #8d969e);">Data Fetch Stats</h3>
         <table class="table" style="margin-bottom: 1.25rem;">
             <thead>
                 <tr>
@@ -143,13 +143,13 @@
     </div>
 </form>
 
-<!-- Debug: TradingView Fetch Test -->
+<!-- Debug: Data Fetch Test -->
 <div class="card settings-card">
     <div class="card-header">
-        <h2>🔍 Debug: TradingView Fetch</h2>
+        <h2>🔍 Debug: Data Fetch</h2>
     </div>
     <div style="padding: 0.75rem 1.25rem;">
-        <p class="hint" style="margin-bottom:0.75rem;">Test the TradingView data fetcher for any symbol. This launches a headless browser and fetches live data (~30-60s).</p>
+        <p class="hint" style="margin-bottom:0.75rem;">Test the data fetcher for any symbol. Fetches live data via Yahoo Finance (~5-10s).</p>
         <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
             <select id="debugSymbol" class="input-field" style="width:220px; padding:0.5rem 0.8rem;">
                 <option value="">— Select symbol —</option>
@@ -273,7 +273,7 @@
                     + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">'
                     + '<strong>' + labels[key] + '</strong>'
                     + '<span class="mono" style="font-size:0.8rem; opacity:0.6;">'
-                    + formatSize(r.size) + ' chars · ' + r.duration_seconds.toFixed(1) + 's'
+                    + formatSize(r.size) + ' chars · ' + (r.duration_seconds != null ? r.duration_seconds.toFixed(1) + 's' : '')
                     + (hasError ? ' · <span style="color:var(--accent-red, #e23b4a);">ERROR</span>' : '')
                     + '</span></div>'
                     + '<pre style="background:var(--bg,#111); border:1px solid var(--border, #2d2d35); border-radius:4px; padding:0.75rem; max-height:350px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:0.78rem; line-height:1.35; margin:0;">'

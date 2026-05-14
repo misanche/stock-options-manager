@@ -179,7 +179,7 @@
             <span class="alert-indicator" title="Alert">📢</span>
             {% endif %}
             {% if item.data_error %}
-            <span class="data-error-indicator" title="Partial data — some TradingView resources returned 403">⚠️</span>
+            <span class="data-error-indicator" title="Partial data — some data resources were unavailable">⚠️</span>
             {% endif %}
             {% set sv_dash = item.supervisor_view %}
             {% if item.activity and item.activity | upper == 'WAIT' and sv_dash and sv_dash.challenge_strength in ['MODERATE', 'STRONG'] %}

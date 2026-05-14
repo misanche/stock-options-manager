@@ -68,6 +68,19 @@ async def lifespan(app):
     # Initialise CosmosDB (on_event("startup") is skipped when lifespan is set)
     from web.app import init_cosmos
     await init_cosmos(app)
+
+    # Initialize yfinance provider (must be here — on_event("startup") is
+    # skipped when a lifespan context manager is attached)
+    import logging
+    _logger = logging.getLogger(__name__)
+    try:
+        from src.yfinance_data_provider import create_provider
+        app.state.yf_provider = create_provider()
+        _logger.info("YFinance data provider initialized successfully")
+    except Exception as e:
+        _logger.exception("YFinance provider init failed")
+        app.state.yf_provider = None
+
     _start_scheduler()
     app.state.scheduler = _scheduler_instance
     yield

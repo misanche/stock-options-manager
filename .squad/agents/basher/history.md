@@ -7,6 +7,25 @@
 - **MCP:** iflow-mcp_ferdousbhai_investor-agent 1.6.3
 - **Description:** Two periodic trading agents for covered call and cash-secured put sell signals. Local runtime, configurable polling, stock symbols from files, decision logs, sell signal alerts.
 
+## Core Context
+
+### Phase 4a Deployment Automation (2026-03-28)
+- Provisioning script (`provision_cosmosdb.sh`): idempotent CosmosDB setup with custom indexing policy
+- Migration script (`migrate_to_cosmosdb.py`): Data import from local logs + txt files with integrity checks
+- Dockerfile: Updated for cloud deployment (removed local volume mounts, added scripts)
+- README: Architecture docs, env var table, Docker run examples, CosmosDB setup guide
+
+### CosmosDB Unified Schema Migration (2026-04-01)
+- 4-phase migration (`migrate_cosmos_events.py`): Export backup → Transform doc schema → Write unified events → Validate
+- Features: `--dry-run` mode, `--restore` rollback capability, orphaned record handling, duplicate resolution
+- Transformation: Merge alert docs into parent activities, strip prefixes, resolve timestamp collisions
+- Pattern: Idempotent scripts with dry-run, backup capability, progressive validation
+
+### Anti-403 Test Suite (2026-04-06)
+- 28-pass test suite for per-symbol session isolation, exponential backoff recovery, warmup behavior
+- Key patterns: Session scoping per symbol (not global), retry with backoff, config-driven settings
+- Edge case: `tv_403` flag unreachable in some code paths (dead code in exception handler)
+
 ## Learnings
 
 ### Phase 4a — Provisioning, Dockerfile, README (2026-03-28)
@@ -188,3 +207,12 @@ python -m pytest tests/test_anti403.py -v
 - **CSS:** Uses existing CSS variables (`--bg-card`, `--border`, `--accent-green`, `--accent-orange`, `--accent-red`, `--radius-card`, `--radius-pill`). Contrarian-specific classes follow existing badge/card patterns.
 - **JS:** `toggleContrarian()` function + auto-collapse IIFE for WEAK panels. Added at end of `app.js` alongside existing DOMContentLoaded handlers.
 - **Tests:** 6 Jinja2 rendering tests validated all states (no view, WEAK, MODERATE, STRONG, RECONSIDER, empty args, missing one_liner)
+
+### yFinance Migration Phase 1 — Foundation Module Tests (2026-07-18)
+- **Test files:** `tests/test_greeks_calculator.py` (29 tests), `tests/test_technicals_calculator.py` (43 tests), `tests/test_yfinance_data_provider.py` (24 tests) — **96 total, all passing ✅**
+- **greeks_calculator.py API:** `GreeksCalculator` class, `.compute(flag, S, K, T, sigma)` where flag='c'/'p', `.compute_batch(options)`, `_fetch_risk_free_rate()` (module-level). Risk-free rate fetched lazily via `yf.Ticker("^TNX")` inside function (local import — mock via `@patch("yfinance.Ticker")`).
+- **technicals_calculator.py API:** `TechnicalsCalculator` class, `.compute_all(history)` takes only DataFrame (no name/ticker/exchange). Signal functions are module-level: `_oscillator_signal(key, sym_dict)`, `_ma_signal(key, ma_val, close)`, `_tech_recommendation_label(value)`. Output uses dicts (not lists) for indicators, keyed by indicator code (e.g. "RSI", "SMA10"). Recommendation is `{"value": float, "label": str}`.
+- **yfinance_data_provider.py API:** `YFinanceDataProvider(fetcher, config)` — takes a `YFinanceFetcher` + config dict. `fetch_all(symbol)` is **async**, returns dict of JSON strings. No public `fetch_options_chain()` etc — uses private `_build_*` methods. `create_provider(config)` factory creates provider with default fetcher.
+- **Testing patterns:** `asyncio.get_event_loop().run_until_complete()` for async tests (no pytest-asyncio needed), `@patch("src.yfinance_data_provider.yf")` for yfinance mocking, synthetic OHLCV generators with known trend properties, edge cases for expired/zero-vol options via `_expired_greeks`.
+- **Key insight:** `_ma_signal(key, ma_val, close)` — second arg is MA value, third is close price. `close > ma_val` → Buy. Easy to confuse parameter order.
+- **Run command:** `python3 -m pytest tests/test_greeks_calculator.py tests/test_technicals_calculator.py tests/test_yfinance_data_provider.py -v`

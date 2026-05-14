@@ -2,7 +2,6 @@
 dividend growth investing opportunities with technical timing.
 
 100% programmatic (no LLM). Uses yfinance for data, custom metrics for scoring.
-Supplemented by stockanalysis.com for authoritative dividend growth-years data.
 """
 
 import logging
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Yahoo Finance exchange code → TradingView market name
+# Yahoo Finance exchange code mapping
 EXCHANGE_MAP = {
     "NYQ": "NYSE",
     "NMS": "NASDAQ",
@@ -29,7 +28,7 @@ EXCHANGE_MAP = {
 
 
 def _normalize_exchange(raw: str) -> str:
-    """Map yfinance exchange codes to TradingView-compatible names."""
+    """Map yfinance exchange codes to normalized exchange names."""
     return EXCHANGE_MAP.get(raw, raw if raw else "NYSE")
 
 
@@ -43,43 +42,7 @@ def _load_symbols(symbols_str: str) -> list[str]:
     return symbols
 
 
-def _apply_stockanalysis_overrides(symbol: str, metrics: dict) -> None:
-    """Fetch stockanalysis.com data and override/supplement Yahoo metrics in-place.
 
-    Priority rules:
-    - ``years_consecutive_increases``: ALWAYS prefer SA ``growth_years`` over Yahoo.
-    - ``dividend_yield``, ``payout_ratio``, ``dividend_cagr_5y``: use SA value as
-      fallback only when Yahoo returns 0 or missing.
-    """
-    from .stockanalysis_fetcher import fetch_dividend_data
-
-    sa_data = fetch_dividend_data(symbol)
-    if sa_data is None:
-        logger.info("[SA] No data for %s — using Yahoo values only", symbol)
-        return
-
-    # Always prefer SA growth_years
-    if "growth_years" in sa_data:
-        yahoo_years = metrics.get("years_consecutive_increases", 0)
-        sa_years = sa_data["growth_years"]
-        metrics["years_consecutive_increases"] = sa_years
-        logger.info("[SA] %s years_consecutive_increases: SA=%d (Yahoo=%d) — using SA",
-                     symbol, sa_years, yahoo_years)
-
-    # Fallback fields: only override when Yahoo returns 0 or missing
-    fallback_map = {
-        "dividend_yield": "dividend_yield",
-        "payout_ratio": "payout_ratio",
-        "dividend_cagr_5y": "dividend_growth",
-    }
-    for metric_key, sa_key in fallback_map.items():
-        if sa_key not in sa_data:
-            continue
-        yahoo_val = metrics.get(metric_key, 0)
-        if not yahoo_val:
-            metrics[metric_key] = sa_data[sa_key]
-            logger.info("[SA] %s %s: Yahoo=0 → using SA value %.4f",
-                         symbol, metric_key, sa_data[sa_key])
 
 
 def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
@@ -138,9 +101,6 @@ def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
         "sector": info.get("sector", ""),
         "exchange": _normalize_exchange(info.get("exchange", "")),
     }
-
-    # Supplement with stockanalysis.com data
-    _apply_stockanalysis_overrides(symbol, metrics)
 
     # Technical timing
     if history is None or (hasattr(history, "empty") and history.empty):
@@ -292,9 +252,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 "exchange": _normalize_exchange(info.get("exchange", "")),
             }
 
-            # Supplement with stockanalysis.com data
-            _apply_stockanalysis_overrides(symbol, metrics)
-            # Polite delay between SA requests (handled by cache for repeats)
+            # Polite delay between requests (handled by cache for repeats)
             time.sleep(0.5)
 
             logger.info("[DGI %s] yield=%.3f, cagr=%.3f, years=%d, payout=%.2f, pe=%.1f, de=%.2f, mcap=%s",

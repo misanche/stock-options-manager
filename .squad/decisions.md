@@ -3060,3 +3060,77 @@ The DGI screener's `top_n` parameter (how many top-ranked stocks to keep) was ha
 ### Rationale
 Follows the same pattern as `summary_activity_count`: numeric input with server-side clamping. Keeps the default at 40 so existing deployments are unaffected.
 
+
+---
+
+## 26. Decision: Recommendation values computed from signal ratios
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-14  
+**Status:** Implemented  
+
+### Context
+TradingView's scanner API provided pre-computed `Recommend.All`, `Recommend.Other`, `Recommend.MA` fields (normalized to [-1, 1]). yfinance has no equivalent.
+
+### Decision
+Compute recommendation values as `(buy_count - sell_count) / total_count` for each group (overall, oscillators, MAs). This produces the same [-1, 1] range and feeds the same `_tech_recommendation_label()` thresholds (≥0.5 = Strong Buy, >0.1 = Buy, etc.).
+
+### Consequences
+Slight deviation from TradingView's exact weighting (which may have used proprietary signal weights), but same label thresholds apply and agents consume labels not raw values.
+
+---
+
+## 27. Decision: No pandas-ta hard requirement
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-14  
+**Status:** Implemented  
+
+### Context
+pandas-ta is excellent but can have install issues on some platforms (C extensions).
+
+### Decision
+TechnicalsCalculator has full manual fallback using only pandas + numpy (always available). pandas-ta is tried first for cleaner code and potential performance, but the manual path produces identical output.
+
+### Consequences
+- **Reliability**: Works on all platforms without binary dependencies
+- **Performance**: pandas-ta path still available for users who have it installed
+- **Maintenance**: One code path to maintain (manual) vs. conditional logic
+
+---
+
+## 28. Decision: Options chain DTE window is configurable
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-14  
+**Status:** Implemented  
+
+### Context
+Different strategies need different time horizons. Covered calls typically target 30-45 DTE, but agents may want to see wider range.
+
+### Decision
+Default 7-90 DTE window, configurable via `config={"min_dte": 7, "max_dte": 90}` passed to `create_provider()`. Agents don't need 6-month or 1-year LEAPS chains for weekly sell signals.
+
+### Consequences
+- **Flexibility**: Agents can tailor expiration horizons per strategy
+- **Performance**: Smaller chains (fewer options to analyze)
+- **Default behavior**: 7-90 DTE covers most standard strategies without config
+
+---
+
+## 29. Decision: dividendYield handling
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-14  
+**Status:** Implemented  
+
+### Context
+yfinance returns dividendYield in percentage form (0.88 = 0.88%, not 88%). This is a known gotcha documented in project memory.
+
+### Decision
+Store as-is in the output (matching TV format where `dividends_yield` was already percentage-form, e.g. 0.88%). The agents expect percentage display values. No division by 100 in the output — only internally if we ever need decimal form for calculations.
+
+### Consequences
+- **Format consistency**: Matches TradingView API format
+- **Agent simplicity**: Agents receive display-ready values
+- **Calculation safety**: If Greeks calculator needs decimal form, convert locally
