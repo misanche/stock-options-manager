@@ -2762,3 +2762,20 @@ If/when codebase matures and these constants become "legacy" (e.g., migration to
 - ✅ No dead code remains
 - ✅ Plumbing terminology now provider-agnostic
 - ✅ Clear separation maintained with instruction files
+
+---
+
+### Decision: Fix prolonged WAIT cooldown deadlock (Linus)
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2025-07-15  
+**Status:** Implemented  
+**Commit:** fix: use alpha_view instead of supervisor_view in prolonged WAIT cooldown
+
+**Problem:** The `_detect_prolonged_wait()` method in `src/agent_runner.py` (lines 672-681) checked `supervisor_view` to find the last Alpha review for cooldown. However, supervisor runs unconditionally on every activity, so all records have `supervisor_view` set. The loop always broke on first record, `waits_since_last_review` was always 0, and cooldown always returned `False` — preventing Alpha from ever triggering on prolonged WAITs. Production evidence: MKC cash_secured_put ran 6+ consecutive WAITs with Supervisor [WEAK], but no Alpha trigger.
+
+**Decision:** Changed cooldown field from `supervisor_view` → `alpha_view`. The `alpha_view` field only exists on records where full supervisor+alpha review cycle has previously fired, making it the correct cooldown signal.
+
+**Scope:** Single field change in `_detect_prolonged_wait()` (line 676). Surgical fix affecting only cooldown gating.
+
+**Risk:** Low.

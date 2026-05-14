@@ -9,6 +9,14 @@
 
 ## Learnings
 
+### Prolonged WAIT Cooldown Deadlock Fix (2026-05-14)
+- The `_detect_prolonged_wait()` method in `src/agent_runner.py` checks if enough consecutive WAITs have occurred to trigger Alpha for deeper review. A cooldown prevents re-triggering Alpha too soon after a previous alpha review.
+- **Bug:** Cooldown loop checked `supervisor_view` to find last Alpha review, but supervisor runs unconditionally on every activity, so ALL records have `supervisor_view` set. Loop always broke on first record → `waits_since_last_review` always 0 → cooldown always returned `False` → Alpha could never trigger.
+- **Production evidence:** MKC cash_secured_put ran 6+ consecutive WAITs with Supervisor [WEAK], but "⏳ Prolonged WAIT detected" never appeared.
+- **Fix:** Changed cooldown field from `supervisor_view` → `alpha_view`. The `alpha_view` field only exists on records where full supervisor+alpha review cycle previously fired, making it the correct cooldown signal. Single field change at line 676.
+- **Key pattern:** When checking activity logs for "last occurrence of event X", must filter by a field that only exists on X records — not a field that exists on all records.
+- **Commit:** `fix: use alpha_view instead of supervisor_view in prolonged WAIT cooldown`
+
 ### Premium=0.0 Root Cause Analysis & Fix (2026-05)
 - ALL agents returning premium=0.0 across covered call and cash-secured put agents.
 - Root cause investigation traced the full pipeline: TradingView Playwright interception → parser → filter → serialization → agent consumption → validation.
@@ -1843,3 +1851,10 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 - `copy.deepcopy` needed to avoid mutation of cached data during merge
 - Key file: `src/yfinance_data_provider.py`, method `_build_options_chain` (line ~470)
 - Cache is ephemeral (lost on restart) — acceptable tradeoff per user decision
+
+### Prolonged WAIT Cooldown Deadlock Fix (2025-07)
+- `_detect_prolonged_wait()` in `src/agent_runner.py` had a logical deadlock: the cooldown loop checked `supervisor_view` to detect recent reviews, but since the supervisor runs unconditionally on every activity, ALL records have `supervisor_view` set.
+- This caused the loop to always break at index 0, making `waits_since_last_review` always 0, which always triggered the cooldown early-return — the Alpha agent could never fire for prolonged WAITs.
+- Fix: changed the cooldown check from `supervisor_view` to `alpha_view`. The `alpha_view` field only exists when a full supervisor+alpha review cycle has previously run, which is the correct cooldown signal.
+- Both code paths (analysis ~line 1130, position monitor ~line 1887) use the same `_detect_prolonged_wait` method, so the single fix covers both.
+- Key takeaway: when designing cooldown logic, the gating field must represent the action being cooled down (alpha review), not a ubiquitous side-effect (supervisor review).
