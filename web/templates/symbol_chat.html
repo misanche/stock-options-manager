@@ -18,9 +18,9 @@
         <div style="padding: 0.75rem 1.25rem;">
             <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
                 <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; user-select: none; padding: 0.75rem; border: 1px solid var(--border, #2d2d35); border-radius: 6px; background: var(--bg-card, #222228); transition: all 0.2s;">
-                    <input type="checkbox" id="contextTradingView" checked style="cursor: pointer; width: 18px; height: 18px;">
+                    <input type="checkbox" id="contextMarketData" checked style="cursor: pointer; width: 18px; height: 18px;">
                     <div>
-                        <div style="font-weight: 500; color: var(--text-primary, #ffffff);">📊 TradingView Data</div>
+                        <div style="font-weight: 500; color: var(--text-primary, #ffffff);">📊 Market Data</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted, #8d969e); margin-top: 0.25rem;">Real-time price, volume, and technical indicators</div>
                     </div>
                 </label>
@@ -86,7 +86,7 @@
     const startChatBtn = document.getElementById('startChatBtn');
     const contextIndicator = document.getElementById('contextIndicator');
     
-    const tvCheckbox = document.getElementById('contextTradingView');
+    const mdCheckbox = document.getElementById('contextMarketData');
     const posCheckbox = document.getElementById('contextPositions');
     const actCheckbox = document.getElementById('contextActivities');
 
@@ -100,7 +100,8 @@
     if (savedPrefs) {
         try {
             const prefs = JSON.parse(savedPrefs);
-            if (typeof prefs.tradingview === 'boolean') tvCheckbox.checked = prefs.tradingview;
+            if (typeof prefs.market_data === 'boolean') mdCheckbox.checked = prefs.market_data;
+            else if (typeof prefs.tradingview === 'boolean') mdCheckbox.checked = prefs.tradingview; // legacy compat
             if (typeof prefs.positions === 'boolean') posCheckbox.checked = prefs.positions;
             if (typeof prefs.activities === 'boolean') actCheckbox.checked = prefs.activities;
         } catch (e) {}
@@ -109,20 +110,20 @@
     // Save preferences on change
     function savePreferences() {
         const prefs = {
-            tradingview: tvCheckbox.checked,
+            market_data: mdCheckbox.checked,
             positions: posCheckbox.checked,
             activities: actCheckbox.checked
         };
         localStorage.setItem(storageKey, JSON.stringify(prefs));
     }
     
-    tvCheckbox.addEventListener('change', savePreferences);
+    mdCheckbox.addEventListener('change', savePreferences);
     posCheckbox.addEventListener('change', savePreferences);
     actCheckbox.addEventListener('change', savePreferences);
     
     function getContextPreferences() {
         return {
-            tradingview: tvCheckbox.checked,
+            market_data: mdCheckbox.checked,
             positions: posCheckbox.checked,
             activities: actCheckbox.checked
         };
@@ -130,7 +131,7 @@
     
     function updateContextIndicator(prefs) {
         const contextItems = [];
-        if (prefs.tradingview) contextItems.push('📊 TV');
+        if (prefs.market_data) contextItems.push('📊 Data');
         if (prefs.positions) contextItems.push('📈 Positions');
         if (prefs.activities) contextItems.push('📋 Activities');
         
@@ -174,7 +175,7 @@
             } else {
                 cachedContext = data.context;
                 const contextItems = [];
-                if (prefs.tradingview) contextItems.push('TradingView data');
+                if (prefs.market_data) contextItems.push('market data');
                 if (prefs.positions) contextItems.push('current positions');
                 if (prefs.activities) contextItems.push('recent activities');
                 const contextDesc = contextItems.length > 0 
