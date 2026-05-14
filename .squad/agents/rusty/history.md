@@ -774,3 +774,30 @@ Implemented clean cut replacement of all TradingView data fetching with yfinance
 - Stubbed `_apply_stockanalysis_overrides()` in dgi_screener.py (yfinance is sole data source now)
 
 **Test results:** 96 passed, 0 failed (down from 127+22 failing = 149 pre-Phase 4).
+
+### Phase 5 — Clean Remaining TradingView/stockanalysis References in Plumbing (2026-07)
+**Status:** ✅ Completed  
+**Commit:** 895f157  
+**Scope:** Remove all remaining stale references to TradingView, Playwright, BeautifulSoup, and stockanalysis from plumbing files (instruction files handled separately by Linus)
+
+**What was done:**
+- **src/cosmos_db.py** (3 edits): Updated docstring from "TradingView resources" → "data provider resources"; updated health status section header and functions from "TradingView Health Status" → "Data Provider Health Status"; updated method docstrings to remove TradingView terminology
+- **src/dgi_screener.py** (5 edits): Removed "Supplemented by stockanalysis.com" from module docstring; removed "TradingView market name" from EXCHANGE_MAP comment (now just "exchange code mapping"); updated `_normalize_exchange()` docstring to "normalized exchange names" (removed "TradingView-compatible"); deleted entire `_apply_stockanalysis_overrides()` function (now dead code); removed both call sites of the deleted function (lines 113 and 266)
+- **src/main.py** (1 edit): Scheduler startup message updated from "Using Microsoft Agent Framework + Playwright" → "Using Microsoft Agent Framework + yfinance"
+- **src/options_chain_filters.py** (1 edit): Module docstring updated to remove reference to "both TradingView parser and" (now only yfinance)
+- **src/report_agent.py** (1 edit): Docstring updated from "TradingView data + CosmosDB" → "market data + CosmosDB"
+- **web/app.py** (3 edits): Renamed preference key `tradingview` → `market_data` for provider-agnostic terminology; updated docstring and default preference dict
+
+**Testing:** 96 tests passed, 0 failures (unchanged from Phase 4).
+
+**Pattern established:**
+- All plumbing references now use provider-agnostic terminology ("market data", "data provider") or yfinance-specific terms
+- Instruction files (still using "TradingView" for backward compatibility) handled by Linus separately
+- Removed obsolete code (stockanalysis function) entirely rather than leaving dead stubs
+
+**Files modified:** 6 (cosmos_db.py, dgi_screener.py, main.py, options_chain_filters.py, report_agent.py, web/app.py)
+
+## Learnings
+- Removing unused function definitions is better than leaving them as no-op stubs—makes intent clear and reduces cognitive load
+- Provider-agnostic terminology in plumbing allows future data source swaps without code churn
+- Call site removal is as important as function deletion—grep after deletion to verify no orphaned references

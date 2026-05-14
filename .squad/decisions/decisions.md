@@ -2690,3 +2690,75 @@ If/when codebase matures and these constants become "legacy" (e.g., migration to
 - Stubbed stockanalysis as no-op
 - All 96 tests pass, 0 failures
 - Commit: db7b4ff
+
+---
+
+## Phase 5: Instruction File Content Update + Provider-Agnostic Terminology
+
+**Date:** 2026-05-14  
+**Agents:** Linus (Quant Dev) + Rusty (Agent Dev)  
+
+### Decision: Instruction File Content Updated to Yahoo Finance (Linus)
+
+**Context:** After Phase 3 renamed the 14 `tv_*` instruction files and Phase 4 removed the TradingView/Playwright code, the instruction file *content* still referenced TradingView as the data source. This creates confusion for LLM agents.
+
+**Decision:** Updated all 9 instruction files that contained TradingView/Playwright references (43 replacements total):
+
+| Pattern | Replacement |
+|---------|-------------|
+| "TradingView" (data source) | "Yahoo Finance" |
+| "via Playwright" | "via yfinance" |
+| "browser tools" | "data fetching tools" |
+| "TradingView provides RSI..." | "computed via pandas-ta" |
+| "TradingView Pre-Fetched Data" | "Pre-Fetched Data" |
+| "TradingView provides pre-analyzed" | "The provider includes pre-analyzed" |
+| "pre-fetched TradingView data" | "pre-fetched market data" |
+| "Analyze the TradingView data" | "Analyze the market data" |
+
+**Files unchanged (no TradingView references):**
+- `open_call_roll_instructions.py`
+- `open_put_roll_instructions.py`
+- `alpha_instructions.py`
+- `supervisor_instructions.py`
+- `summary_instructions.py`
+
+**Preserved:**
+- All trading logic, thresholds, DTE rules, delta targets
+- Variable names (`TV_CASH_SECURED_PUT_INSTRUCTIONS`, etc.)
+- Tool-call prohibition language
+
+**Verification:** 96 tests pass, zero remaining TradingView/Playwright/browser references.
+
+### Decision: Provider-Agnostic Plumbing Terminology (Rusty)
+
+**Problem:** Remaining references to "TradingView", "Playwright", "BeautifulSoup", "stockanalysis" in plumbing files created ambiguity after Phase 4 deletion.
+
+**Decision:** Remove all stale references from plumbing and adopt provider-agnostic terminology:
+- Replace "TradingView" with "market data" or "data provider"
+- Replace "Playwright" with "yfinance"
+- Delete unused functions entirely (`_apply_stockanalysis_overrides`) rather than stubs
+- Rename `preferences["tradingview"]` → `preferences["market_data"]`
+
+**Rationale:**
+1. **Dead code removal > stubs:** `_apply_stockanalysis_overrides()` no-op was stubbed in Phase 4. Full deletion signals intent, eliminates maintenance burden.
+2. **Provider-agnostic naming:** If yfinance is ever replaced, code using "market data" requires no changes. Reduces future migration effort.
+3. **Separation of concerns:** Instructions (Linus) keep "TradingView"; plumbing (Rusty) uses neutral terminology. Clear boundary prevents conflicts.
+4. **Call sites cleaned up:** Both call sites to `_apply_stockanalysis_overrides()` (lines 113, 266 in dgi_screener.py) removed, not left as orphans.
+
+**Affected Components:**
+- `cosmos_db.py`: Health status terminology updated
+- `dgi_screener.py`: Removed stockanalysis function + call sites
+- `main.py`: Scheduler message updated
+- `options_chain_filters.py`: Module docstring cleaned
+- `report_agent.py`: Context description updated
+- `web/app.py`: Preference key renamed for consistency
+
+**Trade-offs:**
+- `preferences["market_data"]` replaces `preferences["tradingview"]` (internal only, not exposed to API)
+- Instruction files still use "TradingView" terminology for backward compat, frontend stays compatible
+
+**Outcomes:**
+- ✅ All 96 tests pass
+- ✅ No dead code remains
+- ✅ Plumbing terminology now provider-agnostic
+- ✅ Clear separation maintained with instruction files
