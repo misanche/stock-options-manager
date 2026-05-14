@@ -1865,3 +1865,10 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 - Current indicators: 📢 `.alert-indicator` (alerts), ⚠️ `.data-error-indicator` (data errors), 🤔 `.review-indicator` (supervisor challenges), 🧠 `.alpha-indicator` (alpha advisor).
 - CSS for indicators lives in `web/static/style.css` — `.alert-indicator` near line 386, `.review-indicator` near line 201, `.alpha-indicator` right after `.alert-indicator`.
 - Dashboard uses `item.` prefix, symbol_detail uses `d.` prefix for the same fields.
+
+### Market Status Dashboard Card (2026-07)
+- Added a market status indicator card to the dashboard summary row, next to the "Open Positions" card.
+- Green circle (●) when market is OPEN, grey circle when CLOSED, using the existing `is_us_market_open()` probe from `src/market_hours.py`.
+- The probe already runs with a 5-minute cache (`_CACHE_TTL_SECONDS = 300`), so no new background work needed — just import and call.
+- Changes: `web/app.py` (import + pass `market_open` to template context), `web/templates/dashboard.html` (new card in `.summary-row`), `web/static/style.css` (`.summary-card-market`, `.market-dot` styles).
+- Reused existing CSS variables `--accent-green` and `--text-muted` for the open/closed colors to stay consistent with the design system.

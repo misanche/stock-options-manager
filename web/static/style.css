@@ -155,6 +155,10 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--accent-blue);
 }
 .summary-label { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.25rem; }
+.summary-card-market { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.market-dot { font-size: 1.8rem; line-height: 1; }
+.summary-card-market.market-open .market-dot { color: var(--accent-green); }
+.summary-card-market.market-closed .market-dot { color: var(--text-muted); }
 .summary-card-action {
     display: flex;
     align-items: center;
@@ -646,7 +650,7 @@ textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 /* ── Responsive ── */
 @media (max-width: 640px) {
     .topnav { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
-    .summary-row { grid-template-columns: repeat(3, 1fr); }
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
     .detail-grid { grid-template-columns: 1fr; }
     .chat-bubble { max-width: 95%; }
     .activity-item { font-size: 0.78rem; }

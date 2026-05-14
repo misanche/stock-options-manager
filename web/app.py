@@ -14,6 +14,8 @@ import pytz
 import yaml
 from croniter import croniter
 from fastapi import FastAPI, Request, Query
+
+from src.market_hours import is_us_market_open
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -890,12 +892,15 @@ def _build_dashboard_tables(cosmos, all_symbols, all_alerts, all_activities):
 async def dashboard(request: Request):
     cosmos = getattr(request.app.state, "cosmos", None)
 
+    market_open = is_us_market_open()
+
     empty_ctx = {
         "request": request,
         "agent_tables": [],
         "grand_totals": {"today": 0, "week": 0, "month": 0, "total": 0},
         "symbol_count": 0, "position_count": 0, "activity": [],
         "agent_types": AGENT_TYPES,
+        "market_open": market_open,
     }
     if cosmos is None:
         error_detail = getattr(request.app.state, "cosmos_error", "unknown")
@@ -958,6 +963,7 @@ async def dashboard(request: Request):
         "position_count": position_count,
         "activity": activity,
         "agent_types": AGENT_TYPES,
+        "market_open": market_open,
     })
 
 
