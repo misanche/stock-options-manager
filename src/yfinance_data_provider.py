@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from src.greeks_calculator import GreeksCalculator
+from src.market_hours import is_us_market_open
 from src.technicals_calculator import TechnicalsCalculator
 from src.yfinance_fetcher import YFinanceFetcher
 
@@ -468,10 +469,61 @@ class YFinanceDataProvider:
     # ------------------------------------------------------------------
     def _build_options_chain(self, ticker, current_price: Optional[float],
                              symbol: str) -> str:
-        """Build options chain JSON string with Greeks."""
+        """Build options chain JSON string with Greeks.
+
+        Uses yfinance when the US market is open.  Falls back to
+        TradingView Playwright scraping when the market is closed (yfinance
+        returns zeroed bid/ask/IV during off-hours).
+        """
+        market_open = is_us_market_open()
+
+        if not market_open:
+            logger.info(
+                "%s: US market CLOSED — attempting TradingView Playwright fallback "
+                "for options chain", symbol,
+            )
+            try:
+                import asyncio
+                from src.tv_options_chain_fetcher import fetch_tv_options_chain
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        tv_result = pool.submit(
+                            asyncio.run, fetch_tv_options_chain(symbol)
+                        ).result(timeout=60)
+                else:
+                    tv_result = asyncio.run(fetch_tv_options_chain(symbol))
+
+                # Check if we actually got data
+                has_data = bool(tv_result.get("calls") or tv_result.get("puts"))
+                if has_data:
+                    tv_result["market_status"] = "closed"
+                    logger.info(
+                        "%s: TradingView fallback successful — %d call expirations, "
+                        "%d put expirations",
+                        symbol,
+                        len(tv_result.get("calls", {})),
+                        len(tv_result.get("puts", {})),
+                    )
+                    return json.dumps(tv_result, default=str)
+                else:
+                    logger.warning(
+                        "%s: TradingView fallback returned empty chain — "
+                        "falling through to yfinance", symbol,
+                    )
+            except Exception as exc:
+                logger.error(
+                    "%s: TradingView Playwright fallback failed: %s — "
+                    "falling through to yfinance (zeros expected)", symbol, exc,
+                )
+
+        # ------ Primary path: yfinance ------
         result = {
             "symbol": symbol,
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "market_status": "open" if market_open else "closed",
             "calls": {},
             "puts": {},
         }
@@ -524,6 +576,10 @@ class YFinanceDataProvider:
             if puts_dict:
                 result["puts"][exp_key] = puts_dict
 
+        logger.info(
+            "%s: options chain built via yfinance (market_status=%s)",
+            symbol, result["market_status"],
+        )
         return json.dumps(result, default=str)
 
     def _process_option_df(self, df: pd.DataFrame, option_type: str,

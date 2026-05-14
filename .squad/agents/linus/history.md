@@ -1801,3 +1801,14 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 - Key replacements: TradingView→Yahoo Finance, Playwright→yfinance, "browser tools"→"data fetching tools", "TradingView provides RSI..."→"computed via pandas-ta".
 - Trading logic, thresholds, DTE rules all preserved unchanged. Variable names (TV_*) kept for import stability.
 - All 96 tests pass. Decision doc written to inbox.
+
+### Hybrid Options Chain — yfinance + TradingView Fallback (2026-07)
+- Problem: yfinance returns zeroed bid/ask/IV/volume data when US markets are closed. The old TradingView Playwright scraper cached stale-but-useful last-close data.
+- Solution: Hybrid approach — yfinance is primary (market open), TradingView Playwright is fallback (market closed). Only options chain uses this; overview/technicals/forecast/dividends stay yfinance 24/7.
+- Created `src/market_hours.py`: `is_us_market_open()` checks Mon–Fri 9:30 AM – 4:00 PM ET, excludes 10 NYSE holidays (rule-based, any year). Uses `pytz` for timezone conversion. Easter computed via anonymous Gregorian algorithm for Good Friday.
+- Created `src/tv_options_chain_fetcher.py`: Standalone Playwright fetcher recovered from `main:src/tv_data_fetcher.py` (lines 1219-1420). Self-contained — no dependency on old `tv_data_fetcher.py`. Includes `_parse_tv_to_yfinance_format()` that transforms TradingView scanner API fields into the exact same strike-keyed dict structure yfinance produces (contractSymbol, strike, bid, ask, mid, iv, greeks, volume, etc). Fields not available from TradingView (volume, openInterest, lastPrice, lastTradeDate) default to zero/null.
+- Modified `src/yfinance_data_provider.py::_build_options_chain()`: Checks `is_us_market_open()` first. If closed → attempts TradingView fallback, falls back to yfinance on any failure. Added `market_status` field ("open"/"closed") to options chain JSON. Error handling: if Playwright fails, yfinance data (even zeroed) is returned — never crashes.
+- Updated `requirements.txt`: added `playwright>=1.40.0`, `beautifulsoup4>=4.12.0`.
+- Updated `Dockerfile`: added `playwright install chromium --with-deps` after pip install.
+- All 96 tests pass unchanged.
+- Key pattern: When a primary data source has known gaps (off-hours zeros), a targeted fallback for specific data types is better than a full fallback. The fallback must produce identical output structure so consumers don't need conditional logic.

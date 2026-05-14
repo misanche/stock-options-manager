@@ -9,6 +9,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Chromium + OS-level deps via Playwright (needed for TradingView fallback)
+RUN playwright install chromium --with-deps
+
 # Application source + config + scripts
 COPY config.yaml run.py run_web.py ./
 COPY src/ src/
