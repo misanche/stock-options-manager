@@ -1727,3 +1727,15 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 ### Deliverable
 - Document: `decisions.md` → yfinance Feasibility Deep-Dive section
 - Verdict: ✅ Fully feasible, proceed with architecture transition
+
+### Phase 1 Foundation Modules (2026-07)
+- Built 3 new modules for the yfinance transition (Danny's plan):
+  1. **`src/greeks_calculator.py`** (~130 lines): Black-Scholes Greeks computation. Uses py_vollib when available, falls back to manual scipy norm.cdf implementation. Risk-free rate lazily fetched from ^TNX via yfinance, cached. Handles edge cases (T≈0, σ≈0). Returns theta as daily decay (/365), vega per 1% IV (/100).
+  2. **`src/technicals_calculator.py`** (~330 lines): Computes all oscillators (RSI, Stoch, CCI, ADX, AO, Mom, MACD, Williams %R, BBPower, UO) and MAs (SMA/EMA 10-200, Ichimoku BL, VWMA, Hull). Signal logic ported exactly from tv_data_fetcher.py `_oscillator_signal()` and `_ma_signal()`. Uses pandas-ta when installed, manual pandas/numpy fallback. Previous bar values (for signal logic) computed via iloc[-2]/-3. Output dict matches `_build_technicals_dict()` structure.
+  3. **`src/yfinance_data_provider.py`** (~400 lines): Orchestrator replacing tv_data_fetcher. `fetch_all(symbol)` returns dict with 5 JSON strings: overview, technicals, forecast, dividends, options_chain. Options chain builds hierarchical YYYYMMDD→strike→contract structure with computed Greeks. Handles dividendYield percentage-form correctly (yfinance returns 0.88 meaning 0.88%, not 88%). Updated `OPTIONS_CHAIN_SCHEMA_DESCRIPTION` with new fields (contractSymbol, volume, openInterest, liquidity/staleness guidance).
+- Updated `requirements.txt` with `py-vollib>=1.0.0` and `pandas-ta>=0.3.0`.
+- Key design decisions:
+  - No fallback to TradingView. Clean cut as specified.
+  - TTL cache (5min default) inside provider to avoid hammering yfinance.
+  - Configurable DTE range (7-90 days default) for options chain filtering.
+  - Recommendation values computed from signal ratios when not available from API (vs TV which had separate Recommend.All/Other/MA fields from scanner).
