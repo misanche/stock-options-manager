@@ -1,7 +1,7 @@
 from .agent_runner import AgentRunner
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
-from .tv_covered_call_instructions import TV_COVERED_CALL_INSTRUCTIONS
+from .covered_call_instructions import TV_COVERED_CALL_INSTRUCTIONS
 import random
 
 

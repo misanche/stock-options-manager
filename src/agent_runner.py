@@ -13,7 +13,7 @@ from agent_framework.azure import AzureOpenAIChatClient
 
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
-from .options_chain_parser import (
+from .options_chain_filters import (
     filter_options_chain_by_type,
     filter_options_chain_for_position,
     filter_options_chain_by_delta,
@@ -21,8 +21,8 @@ from .options_chain_parser import (
     format_roll_candidates_table,
 )
 from .yfinance_data_provider import YFinanceDataProvider, create_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
-from .tv_supervisor_instructions import get_supervisor_instructions, SUPERVISOR_OUTPUT_SCHEMA
-from .tv_alpha_instructions import get_alpha_instructions, ALPHA_OUTPUT_SCHEMA
+from .supervisor_instructions import get_supervisor_instructions, SUPERVISOR_OUTPUT_SCHEMA
+from .alpha_instructions import get_alpha_instructions, ALPHA_OUTPUT_SCHEMA
 
 # Canonical timestamp format — used for ALL activity and alert log entries.
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -2009,7 +2009,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
             telegram_notifier: TelegramNotifier instance
             activity_count: Number of recent activities per symbol (default: 3)
         """
-        from .tv_summary_instructions import TV_SUMMARY_INSTRUCTIONS
+        from .summary_instructions import TV_SUMMARY_INSTRUCTIONS
         
         logger.info("="*70)
         logger.info("Summary Agent - Starting execution")
@@ -2252,7 +2252,7 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
         Returns:
             The generated markdown report text.
         """
-        from .tv_report_instructions import TV_REPORT_INSTRUCTIONS
+        from .report_instructions import TV_REPORT_INSTRUCTIONS
 
         analysis_ts = datetime.now().strftime(TIMESTAMP_FORMAT)
 

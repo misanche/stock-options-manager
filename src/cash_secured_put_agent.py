@@ -1,7 +1,7 @@
 from .agent_runner import AgentRunner
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
-from .tv_cash_secured_put_instructions import TV_CASH_SECURED_PUT_INSTRUCTIONS
+from .cash_secured_put_instructions import TV_CASH_SECURED_PUT_INSTRUCTIONS
 import random
 
 

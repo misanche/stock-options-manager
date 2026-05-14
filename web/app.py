@@ -2693,10 +2693,10 @@ async def chat_api(request: Request):
             sys.path.insert(0, str(PROJECT_ROOT / "src"))
             
             if option_type == "call":
-                from tv_open_call_chat_instructions import TV_OPEN_CALL_CHAT_INSTRUCTIONS
+                from open_call_chat_instructions import TV_OPEN_CALL_CHAT_INSTRUCTIONS
                 instructions = TV_OPEN_CALL_CHAT_INSTRUCTIONS
             else:  # put
-                from tv_open_put_chat_instructions import TV_OPEN_PUT_CHAT_INSTRUCTIONS
+                from open_put_chat_instructions import TV_OPEN_PUT_CHAT_INSTRUCTIONS
                 instructions = TV_OPEN_PUT_CHAT_INSTRUCTIONS
             
             system_prompt = f"{instructions}\n\n{context_text}"

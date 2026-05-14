@@ -17,8 +17,8 @@ async def run_open_put_monitor(config, runner: AgentRunner,
         context_provider: ContextProvider for activity history
         symbol: Optional symbol to filter positions (e.g., 'AAPL')
     """
-    from .tv_open_put_assessment_instructions import get_open_put_assessment_instructions
-    from .tv_open_put_roll_instructions import get_open_put_roll_instructions
+    from .open_put_assessment_instructions import get_open_put_assessment_instructions
+    from .open_put_roll_instructions import get_open_put_roll_instructions
     assessment_instructions = get_open_put_assessment_instructions()
     roll_instructions = get_open_put_roll_instructions()
 
