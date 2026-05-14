@@ -16,7 +16,7 @@ async def run_report_analysis(
 ) -> Dict:
     """Generate a comprehensive report for a single symbol.
 
-    Gathers all context (TradingView data + CosmosDB positions/activities)
+    Gathers all context (market data + CosmosDB positions/activities)
     and delegates to ``runner.run_report_agent()`` for LLM generation.
 
     Args:

@@ -585,7 +585,7 @@ def main():
     """Entry point for the options agent scheduler."""
     print("="*70)
     print(" Option Income Lab Scheduler")
-    print(" Using Microsoft Agent Framework + Playwright")
+    print(" Using Microsoft Agent Framework + yfinance")
     print("="*70)
     print()
     

@@ -758,4 +758,19 @@ Implemented clean cut replacement of all TradingView data fetching with yfinance
 
 **Test results:** 127 passed, 22 failed (old TV tests slated for Phase 4 deletion).
 
-**Open items:** Old TV files (`tv_data_fetcher.py`, `tv_cache.py`) can be deleted once Phase 2 validated in production.
+**Open items:** ~~Old TV files can be deleted once Phase 2 validated in production.~~ ✅ Done in Phase 4.
+
+### Phase 4 — Delete Obsolete TradingView Files & Clean Dependencies (2026-07)
+**Status:** ✅ Completed  
+**Commit:** db7b4ff  
+**Files Deleted:** 8 (tv_data_fetcher.py, tv_cache.py, options_chain_parser.py, stockanalysis_fetcher.py, validate_antibot.py, test_anti403.py, test_tv_cache.py, test_options_chain_parser.py)  
+**Net:** -3,807 lines
+
+**What was done:**
+- Deleted 5 dead source modules + 3 dead test files + 1 dead script
+- Removed playwright and beautifulsoup4 from requirements.txt
+- Removed Chromium installation from Dockerfile (~400MB image size reduction)
+- Redirected stale imports: agent_runner.py, report_agent.py, dgi_screener.py, web/app.py
+- Stubbed `_apply_stockanalysis_overrides()` in dgi_screener.py (yfinance is sole data source now)
+
+**Test results:** 96 passed, 0 failed (down from 127+22 failing = 149 pre-Phase 4).

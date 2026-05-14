@@ -2631,3 +2631,62 @@ Both Rusty and Linus tracks completed in parallel:
 - **Linus:** Filters module extracted (provider-agnostic), README fully refreshed, yfinance as canonical data source
 - **Result:** Application is yfinance-native, no TradingView/Playwright/scraping in active codebase
 - **Tests:** 127 passed, 22 failed (old TV tests slated for Phase 4 deletion)
+
+---
+
+## Phase 3: Instruction File Renames
+
+**Date:** 2026-05-14  
+**Agent:** Linus  
+
+### Decision: Keep Variable Names As-Is
+
+**Decision:** Do NOT rename internal constants (e.g., `TV_SUMMARY_INSTRUCTIONS`, `TV_REPORT_INSTRUCTIONS`, `TV_CASH_SECURED_PUT_INSTRUCTIONS`).
+
+**Rationale:**
+- These are string constants exported from instruction files (the actual prompt text)
+- Renaming would require updates across 20+ import sites and dependent modules
+- Low semantic value: the variable name doesn't affect runtime behavior
+- Marginal clarity gain vs. high refactor cost (low ROI)
+
+**Alternative considered:**
+- Rename all constants to drop `TV_` prefix (e.g., `SUMMARY_INSTRUCTIONS`)
+- Rejected: Would ripple through agent_runner.py lazy-load patterns, agent modules, web/app.py
+- Overkill for string constants
+
+**Execution:**
+✅ Completed Phase 3 with minimal scope creep:
+- File renames: 14 files via `git mv` (history preserved)
+- Import updates: 10 sites across 6 modules
+- Tests: 96 passed, no regressions
+- Commit: 2709b75
+
+**Future Consideration:**
+If/when codebase matures and these constants become "legacy" (e.g., migration to structured prompt templates), revisit full variable rename as part of broader cleanup. For now: acceptable naming debt.
+
+---
+
+## Phase 4: Cleanup (Delete Obsolete Files, Strip Chromium)
+
+**Date:** 2026-05-14  
+**Agent:** Rusty  
+
+### Decision: Stubbed `_apply_stockanalysis_overrides` instead of deleting
+
+**Context:** stockanalysis_fetcher.py was deleted as part of Phase 4 cleanup. The function `_apply_stockanalysis_overrides()` in `dgi_screener.py` is called from 2 locations.
+
+**Decision:** Converted the function to a no-op stub rather than removing it and its call sites. This keeps the code path intact if a future data enrichment source is added, and avoids modifying the scoring pipeline logic unnecessarily.
+
+**Alternatives considered:**
+1. Delete function + remove all call sites → higher risk of breaking scoring pipeline flow
+2. Keep function with try/except ImportError → messy, hides real errors
+
+**Status:** Implemented in commit db7b4ff.
+
+**Phase 4 Summary:**
+- Deleted 8 obsolete files (-3,807 lines)
+- Removed playwright+bs4 from requirements.txt
+- Stripped Chromium from Dockerfile (~400MB savings)
+- Stubbed stockanalysis as no-op
+- All 96 tests pass, 0 failures
+- Commit: db7b4ff

@@ -1771,3 +1771,26 @@ Executed parallel Phase 2 track: extracted options chain filter pipeline into st
 **Backward compatibility:** Existing imports from `options_chain_parser` still work; new code imports from `options_chain_filters`.
 
 **Impact:** Documentation fully aligned with yfinance architecture; onboarding and Docker setup reflect scraping elimination.
+
+### Phase 3 Instruction File Refactoring (2026-07)
+**Status:** ✅ Completed  
+**Commit:** 2709b75  
+**Files Modified:** 20 (14 renamed, 6 import updates)  
+
+Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover from TradingView era). Migration to yfinance is complete, so naming should reflect current reality.
+
+**Execution:**
+- Used `git mv` for all 14 files to preserve git history
+- Updated 10 import sites across 6 modules:
+  - `src/agent_runner.py` (4 imports: supervisor, alpha, summary, report)
+  - `src/cash_secured_put_agent.py` (1 import)
+  - `src/covered_call_agent.py` (1 import)
+  - `src/open_call_monitor_agent.py` (2 imports: assessment, roll)
+  - `src/open_put_monitor_agent.py` (2 imports: assessment, roll)
+  - `web/app.py` (2 imports: open call/put chat)
+- No cross-references inside instruction files themselves — all clean
+- Verified with quick imports + full test suite (96 tests passed)
+
+**Naming pattern:** Variable names (e.g., `TV_SUMMARY_INSTRUCTIONS`) kept as-is for now — string constants are low-touch and renaming would ripple through many files for marginal gain.
+
+**Impact:** Codebase now accurately reflects yfinance-only architecture; no lingering TradingView naming artifacts in strategy logic layer.

@@ -2795,7 +2795,7 @@ async def _build_symbol_context(symbol: str, cosmos,
     Args:
         symbol: Stock symbol
         cosmos: CosmosDB client
-        preferences: Dict with keys: tradingview (market data), positions, activities (all bool)
+        preferences: Dict with keys: market_data (market data), positions, activities (all bool)
         force_refresh: When True, bypass cache.
         provider: YFinanceDataProvider instance (optional, creates one if not provided)
 
@@ -2804,7 +2804,7 @@ async def _build_symbol_context(symbol: str, cosmos,
     # Default to all enabled for backward compatibility
     if preferences is None:
         preferences = {
-            'tradingview': True,
+            'market_data': True,
             'positions': True,
             'activities': True
         }
@@ -2856,7 +2856,7 @@ async def _build_symbol_context(symbol: str, cosmos,
             context_parts.append("(Error loading activities from CosmosDB)")
 
     # Only include market data if requested
-    if preferences.get('tradingview', True):
+    if preferences.get('market_data', True):
         try:
             if provider is None:
                 from src.yfinance_data_provider import create_provider

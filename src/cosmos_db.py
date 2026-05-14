@@ -771,7 +771,7 @@ class CosmosDBService:
         Args:
             symbol: Ticker symbol (partition key).
             report_markdown: Full markdown report from the agent.
-            cached_resources: List of TradingView resources served from cache.
+            cached_resources: List of data provider resources served from cache.
             timestamp: Override timestamp (ISO format). Defaults to now.
 
         Returns:
@@ -1022,10 +1022,10 @@ class CosmosDBService:
         
         return merged
 
-    # ── TradingView Health Status ─────────────────────────────────────
+    # ── Data Provider Health Status ───────────────────────────────────
 
     def get_tv_health(self) -> dict:
-        """Read the TradingView health status document.
+        """Read the data provider health status document.
 
         Returns dict with keys: is_healthy, last_check, last_error, last_error_time.
         Returns a default "healthy" dict if no status doc exists.
@@ -1046,7 +1046,7 @@ class CosmosDBService:
 
     def update_tv_health(self, *, is_healthy: bool,
                          error: str | None = None) -> None:
-        """Upsert the TradingView health status document (best-effort)."""
+        """Upsert the data provider health status document (best-effort)."""
         if self.settings_container is None:
             return
         now = datetime.now(timezone.utc).isoformat()

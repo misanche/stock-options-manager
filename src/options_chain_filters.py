@@ -1,7 +1,6 @@
 """Standalone filter pipeline for structured options chain data.
 
-Works on the unified dict format produced by both TradingView parser and
-yfinance provider — keyed by expiration (YYYYMMDD) then strike (str float).
+Works on the unified dict format produced by yfinance provider — keyed by expiration (YYYYMMDD) then strike (str float).
 No dependency on options_chain_parser.py.
 """
 

@@ -1,7 +1,7 @@
 """
-Report Agent System Instructions (TradingView)
+Report Agent System Instructions (Yahoo Finance)
 Generates comprehensive position & situation reports for a symbol
-using pre-fetched TradingView data and CosmosDB context.
+using pre-fetched Yahoo Finance data and CosmosDB context.
 """
 
 TV_REPORT_INSTRUCTIONS = """
@@ -11,11 +11,11 @@ You are an expert stock options analyst generating comprehensive situation repor
 
 ## DATA SOURCE
 
-All market data has been **pre-fetched from TradingView** and is included directly in your message. You do NOT have any browser tools. Do NOT attempt to call any tools — analyze the data provided.
+All market data has been **pre-fetched from Yahoo Finance** and is included directly in your message. You do NOT have any data fetching tools. Do NOT attempt to call any tools — analyze the data provided.
 
 **Data characteristics:**
 - Values may show "—" during non-market hours — note this and proceed with available data
-- Pre-calculated technicals — TradingView provides RSI, MACD, Stochastic, CCI, ADX, all MAs (10-200) with Buy/Sell/Neutral signals already computed
+- Pre-calculated technicals — RSI, MACD, Stochastic, CCI, ADX, all MAs (10-200) with Buy/Sell/Neutral signals are computed via pandas-ta
 - Pivot points — Classic, Fibonacci, Camarilla, Woodie, DM with R1-R3, S1-S3
 - Options chain data includes strikes, premiums, volume, open interest, IV
 

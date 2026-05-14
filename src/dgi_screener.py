@@ -2,7 +2,6 @@
 dividend growth investing opportunities with technical timing.
 
 100% programmatic (no LLM). Uses yfinance for data, custom metrics for scoring.
-Supplemented by stockanalysis.com for authoritative dividend growth-years data.
 """
 
 import logging
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Yahoo Finance exchange code → TradingView market name
+# Yahoo Finance exchange code mapping
 EXCHANGE_MAP = {
     "NYQ": "NYSE",
     "NMS": "NASDAQ",
@@ -29,7 +28,7 @@ EXCHANGE_MAP = {
 
 
 def _normalize_exchange(raw: str) -> str:
-    """Map yfinance exchange codes to TradingView-compatible names."""
+    """Map yfinance exchange codes to normalized exchange names."""
     return EXCHANGE_MAP.get(raw, raw if raw else "NYSE")
 
 
@@ -43,13 +42,7 @@ def _load_symbols(symbols_str: str) -> list[str]:
     return symbols
 
 
-def _apply_stockanalysis_overrides(symbol: str, metrics: dict) -> None:
-    """No-op — StockAnalysis.com fetcher removed in Phase 4 (yfinance migration).
 
-    Retained as stub so existing call sites continue to work without changes.
-    Yahoo data from yfinance is now the sole source of truth.
-    """
-    return
 
 
 def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
@@ -108,9 +101,6 @@ def analyze_single_symbol(symbol: str, filters: dict = None) -> dict:
         "sector": info.get("sector", ""),
         "exchange": _normalize_exchange(info.get("exchange", "")),
     }
-
-    # Supplement with stockanalysis.com data
-    _apply_stockanalysis_overrides(symbol, metrics)
 
     # Technical timing
     if history is None or (hasattr(history, "empty") and history.empty):
@@ -262,9 +252,7 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 "exchange": _normalize_exchange(info.get("exchange", "")),
             }
 
-            # Supplement with stockanalysis.com data
-            _apply_stockanalysis_overrides(symbol, metrics)
-            # Polite delay between SA requests (handled by cache for repeats)
+            # Polite delay between requests (handled by cache for repeats)
             time.sleep(0.5)
 
             logger.info("[DGI %s] yield=%.3f, cagr=%.3f, years=%d, payout=%.2f, pe=%.1f, de=%.2f, mcap=%s",
