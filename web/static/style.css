@@ -158,7 +158,8 @@ h1, h2, h3, h4, h5, h6 {
 .summary-card-market { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .market-dot { font-size: 1.8rem; line-height: 1; }
 .summary-card-market.market-open .market-dot { color: var(--accent-green); }
-.summary-card-market.market-closed .market-dot { color: var(--text-muted); }
+.summary-card-market.market-closed .market-dot { color: #e74c3c; }
+.summary-card-market.market-unknown .market-dot { color: var(--text-muted); }
 .summary-card-action {
     display: flex;
     align-items: center;
