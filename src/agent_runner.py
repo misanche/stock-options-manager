@@ -669,11 +669,10 @@ class AgentRunner:
                 if activity != "WAIT":
                     return False
 
-            # Cooldown: count WAITs since the last supervisor review
-            # (check both new field name and legacy field for backward compat)
+            # Cooldown: count WAITs since the last alpha review
             waits_since_last_review = 0
             for act in recent:
-                if act.get("supervisor_view"):
+                if act.get("alpha_view"):
                     break
                 waits_since_last_review += 1
             # If a previous review exists, enforce cooldown
