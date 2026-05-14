@@ -1255,7 +1255,7 @@ async def api_debug_agent_chain(request: Request, symbol: str,
         return JSONResponse({"error": f"Symbol {symbol} not found"},
                             status_code=404)
 
-    from src.options_chain_parser import (
+    from src.options_chain_filters import (
         filter_options_chain_by_type,
         filter_options_chain_by_delta,
         filter_options_chain_for_position, filter_options_chain_by_roll_direction,
@@ -2680,7 +2680,7 @@ async def chat_api(request: Request):
             context_parts.append(data["dividends"])
         
         if "options_chain" in data and data["options_chain"]:
-            from src.options_chain_parser import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
+            from src.yfinance_data_provider import OPTIONS_CHAIN_SCHEMA_DESCRIPTION
             context_parts.append("\n=== OPTIONS CHAIN ===")
             context_parts.append(OPTIONS_CHAIN_SCHEMA_DESCRIPTION)
             context_parts.append(data["options_chain"])

@@ -4,7 +4,6 @@ from typing import Dict, List
 
 from .agent_runner import AgentRunner
 from .cosmos_db import CosmosDBService
-from .tv_cache import get_tv_cache as _get_tv_cache
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +96,13 @@ async def run_report_analysis(
         else:
             context_parts.append("(No recent activities)")
 
-    # 3. TradingView data (use cache, no force refresh)
+    # 3. Market data via yfinance provider
     try:
-        from .tv_data_fetcher import create_fetcher
+        from .yfinance_data_provider import create_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
 
-        full_symbol = f"{exchange}-{symbol}"
-        async with create_fetcher(config) as fetcher:
-            tv_data = await fetcher.fetch_all(full_symbol,
-                                              force_refresh=False,
-                                              cache=_get_tv_cache())
-        cached_resources = tv_data.get("cached_resources", [])
+        async with create_provider(config) as provider:
+            yf_data = await provider.fetch_all(symbol)
+        cached_resources = yf_data.get("cached_resources", [])
 
         for section_key, section_label in [
             ("overview", "Overview"),
@@ -115,24 +111,18 @@ async def run_report_analysis(
             ("dividends", "Dividends"),
             ("options_chain", "Options Chain"),
         ]:
-            content = tv_data.get(section_key, "")
+            content = yf_data.get(section_key, "")
             if content and not content.startswith("[ERROR"):
                 if section_key == "options_chain":
-                    from .options_chain_parser import (
-                        parse_options_chain,
-                        OPTIONS_CHAIN_SCHEMA_DESCRIPTION,
-                    )
-                    parsed = parse_options_chain(content, symbol)
-                    if parsed.get("calls") or parsed.get("puts"):
-                        content = (
-                            OPTIONS_CHAIN_SCHEMA_DESCRIPTION + "\n"
-                            + json.dumps(parsed, indent=2)
-                        )
-                context_parts.append(
-                    f"\n--- TradingView {section_label} ---\n{content}")
+                    context_parts.append(
+                        f"\n--- {section_label} ---\n"
+                        + OPTIONS_CHAIN_SCHEMA_DESCRIPTION + "\n" + content)
+                else:
+                    context_parts.append(
+                        f"\n--- {section_label} ---\n{content}")
     except Exception as exc:
-        logger.warning("report: TradingView fetch failed: %s", exc)
-        context_parts.append("(Live TradingView data unavailable)")
+        logger.warning("report: yfinance fetch failed: %s", exc)
+        context_parts.append("(Live market data unavailable)")
 
     context_text = "\n".join(context_parts)
 
