@@ -1739,3 +1739,12 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
   - TTL cache (5min default) inside provider to avoid hammering yfinance.
   - Configurable DTE range (7-90 days default) for options chain filtering.
   - Recommendation values computed from signal ratios when not available from API (vs TV which had separate Recommend.All/Other/MA fields from scanner).
+
+### Options Chain Filters Extraction + README yfinance Update (2026-07)
+- Created `src/options_chain_filters.py` — standalone filter pipeline module extracted from `options_chain_parser.py`.
+- Contains 5 functions: `filter_options_chain_by_type`, `filter_options_chain_for_position`, `filter_options_chain_by_delta`, `filter_options_chain_by_roll_direction`, `format_roll_candidates_table`.
+- Also includes helper `_fmt_exp` and constants `_ROLL_STRIKE_FILTERS`, `_STRICT_LATER_ROLLS`.
+- Module is fully self-contained — imports only `datetime`, `logging`, no dependency on `options_chain_parser.py`.
+- Works on the unified dict format (YYYYMMDD→strike→contract) shared between TradingView parser and yfinance provider.
+- Updated `README.md` to reflect yfinance migration: replaced all TradingView/Playwright/BS4/scanner API references in architecture, data gathering, pre-fetch, cache, setup, Docker, troubleshooting, and project structure sections.
+- Key pattern: The filter pipeline is provider-agnostic — it operates on the structured dict format regardless of data source. This is why extraction into a standalone module makes sense.

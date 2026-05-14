@@ -17,7 +17,7 @@ The result: a DGI portfolio that generates income from **dividends AND option pr
 
 ---
 
-DGI-focused income acceleration platform — uses **Cash Secured Puts (CSP)** to acquire top dividend growth stocks at a discount, and **Covered Calls (CC)** to generate additional income on held DGI positions. A built-in **DGI Screener** identifies the best dividend growth candidates from a configurable stock universe (default: S&P 500), ranking them by a composite quality score combining fundamental strength and technical timing. Options trading analysis is powered by Microsoft Agent Framework with hybrid TradingView data fetching — `requests` + `BeautifulSoup` + TradingView scanner API for most data, Playwright (headless Chromium) only for options chain — fronted by an **in-memory cache layer** (`tv_cache.py`) with per-key TTL and async locking to eliminate redundant fetches across agents. All data — watchlists, positions, activities, reports, alerts, and DGI screener results — is stored in **Azure CosmosDB** (NoSQL) with a symbol-centric partition model.
+DGI-focused income acceleration platform — uses **Cash Secured Puts (CSP)** to acquire top dividend growth stocks at a discount, and **Covered Calls (CC)** to generate additional income on held DGI positions. A built-in **DGI Screener** identifies the best dividend growth candidates from a configurable stock universe (default: S&P 500), ranking them by a composite quality score combining fundamental strength and technical timing. Options trading analysis is powered by Microsoft Agent Framework with Yahoo Finance data fetching via **yfinance** — direct API access for fundamentals, technicals, dividends, analyst data, and full options chains (23+ expirations with computed Greeks). No browser, no scraping, no authentication required. All data — watchlists, positions, activities, reports, alerts, and DGI screener results — is stored in **Azure CosmosDB** (NoSQL) with a symbol-centric partition model.
 
 ## Architecture
 
@@ -31,11 +31,11 @@ Eight specialized agents handle options trading and stock screening:
 - **Report Agent**: Generates comprehensive per-symbol reports combining technical analysis, dividends, options chain, open position risk, and monitoring recommendations
 - **DGI Screener**: Screens a configurable stock universe for top dividend growth investing candidates, ranking by composite quality score (70% fundamental + 30% technical timing) and selecting the Top 20
 
-The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The Supervisor and Alpha Advisor run as Phase 3 in parallel — after the primary decision is written but before Telegram notifications, providing quality assurance and aggressive alternatives respectively. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded TradingView data via the cache layer.
+The first two agents (sell-side) decide whether to **open** new positions. The next two (position monitors) decide whether to **hold or adjust** existing positions. The Supervisor and Alpha Advisor run as Phase 3 in parallel — after the primary decision is written but before Telegram notifications, providing quality assurance and aggressive alternatives respectively. The report agent provides on-demand deep-dive analysis accessible from each symbol's detail page. Additionally, **per-symbol chat** is available directly from the symbol detail page, offering context-aware conversations with pre-loaded market data via the yfinance provider.
 
-Both sell-side agents use the Microsoft Agent Framework (`agent-framework`) with TradingView as the data source. Market data is pre-fetched deterministically — overview, technicals, forecast, and dividends via `requests` + `BeautifulSoup` + TradingView scanner API; options chain via [Playwright](https://playwright.dev/python/) (headless Chromium) — and passed to the LLM for analysis. The LLM never touches the browser or makes HTTP requests directly.
+Both sell-side agents use the Microsoft Agent Framework (`agent-framework`) with Yahoo Finance (yfinance) as the data source. All market data — overview, technicals, forecast, dividends, and full options chains — is fetched via the `yfinance` Python library. No browser, no scraping, no authentication required. Data is pre-fetched deterministically and passed to the LLM for analysis. The LLM never makes HTTP requests directly.
 
-**Storage backend:** Azure CosmosDB with four containers: `symbols` (watchlists, positions, activities, alerts, reports), `telemetry` (runtime performance stats with 30-day TTL), `settings` (application configuration persistence), and `dgi_screener` (DGI screening results and daily snapshots). Each symbol is a partition key in the symbols container containing four document types: `symbol_config` (watchlist flags + positions), `activity` (full audit trail), `alert` (actionable alerts), and `report` (generated symbol reports). The telemetry container tracks TradingView fetch durations and agent run times, displayed on the Settings page. The settings container persists application configuration with partition key `/id`. The dgi_screener container stores current Top 20 entries and daily snapshots for historical tracking, partitioned by `/symbol`. See the [Azure CosmosDB Setup](#azure-cosmosdb-setup) section for provisioning.
+**Storage backend:** Azure CosmosDB with four containers: `symbols` (watchlists, positions, activities, alerts, reports), `telemetry` (runtime performance stats with 30-day TTL), `settings` (application configuration persistence), and `dgi_screener` (DGI screening results and daily snapshots). Each symbol is a partition key in the symbols container containing four document types: `symbol_config` (watchlist flags + positions), `activity` (full audit trail), `alert` (actionable alerts), and `report` (generated symbol reports). The telemetry container tracks data fetch durations and agent run times, displayed on the Settings page. The settings container persists application configuration with partition key `/id`. The dgi_screener container stores current Top 20 entries and daily snapshots for historical tracking, partitioned by `/symbol`. See the [Azure CosmosDB Setup](#azure-cosmosdb-setup) section for provisioning.
 
 ## How It Works
 
@@ -47,7 +47,7 @@ Scheduler (main.py)
   ├─ Query CosmosDB for symbols with watchlist.covered_call = true
   │    for each symbol:
   │      1. Load per-symbol context (recent activities + alerts from CosmosDB)
-  │      2. Pre-fetch TradingView data (overview, technicals, forecast, options chain)
+  │      2. Pre-fetch market data via yfinance (overview, technicals, forecast, dividends, options chain)
   │      3. LLM analyzes pre-fetched data → structured JSON activity
   │      4. Write activity to CosmosDB; if SELL → also write alert document
   │      5. Phase 3 (Supervisor + Alpha): If alert or prolonged WAIT → quality audit + aggressive alternative (in parallel)
@@ -59,7 +59,7 @@ Scheduler (main.py)
   ├─ Query CosmosDB for symbols with active call positions
   │    for each position:
   │      1. Load position details from symbol_config
-  │      2. Pre-fetch TradingView data
+  │      2. Pre-fetch market data via yfinance
   │      3. Phase 1 (Assessment): LLM evaluates assignment risk → WAIT or handoff to Phase 2
   │      4. Phase 2 (Roll Management): Selects specific roll targets from filtered options chain, calculates economics
   │      5. Write activity to CosmosDB; if ROLL/CLOSE → also write alert
@@ -70,7 +70,7 @@ Scheduler (main.py)
        (same two-phase pipeline with supervisor + alpha phase, different agent instructions)
 ```
 
-**Data gathering:** Python pre-fetches ALL TradingView data deterministically from `tv_data_fetcher.py`. Overview, technicals, forecast, and dividends are fetched via `requests` + `BeautifulSoup` + TradingView scanner API (`scanner.tradingview.com/america/scan2`) — no browser needed. Options chain still uses Playwright (headless Chromium) with `page.on("response")` interception because it requires browser authentication. The LLM never touches the browser or makes HTTP requests. It receives the data as text and only performs analysis. See [Pre-fetch Architecture](#pre-fetch-architecture-tradingview) below.
+**Data gathering:** Python pre-fetches ALL market data deterministically via `YFinanceDataProvider` (`src/yfinance_data_provider.py`). Five data types are fetched per symbol — overview, technicals, forecast, dividends, and options chain — all through the `yfinance` Python library. No browser, no scraping, no authentication required. The provider includes built-in rate limiting (2 calls/sec) and a TTL cache (5 min) to avoid redundant fetches. Options chains include 23+ expirations with computed Greeks (delta, gamma, theta, vega) via Black-Scholes (py-vollib). The LLM never makes HTTP requests — it receives pre-fetched data as text and only performs analysis. See [Pre-fetch Architecture](#pre-fetch-architecture-yfinance) below.
 
 **Per-symbol context injection:** Before each symbol is analyzed, the runner reads that symbol's recent activities from CosmosDB and injects them into the prompt. Each activity includes whether it triggered an alert (via the `is_alert` field). The LLM sees only context for the symbol it's currently analyzing — not a mix of all symbols. Context depth is configurable in `config.yaml` (`context.max_activity_entries`, default 2, range 0–5).
 
@@ -287,39 +287,42 @@ Active positions in the Symbol Detail page have a Roll button in the positions t
 }
 ```
 
-### Pre-fetch Architecture (TradingView)
+### Pre-fetch Architecture (yfinance)
 
-LLMs don't reliably make multi-step browser tool calls. When given Playwright tools directly, they skip pages, fabricate navigation errors, and ignore sequencing instructions.
+LLMs don't reliably make multi-step HTTP tool calls. When given fetching tools directly, they skip steps, fabricate data, and ignore sequencing instructions.
 
-The solution: `TradingViewFetcher` (`src/tv_data_fetcher.py`) uses a hybrid approach — `requests` + `BeautifulSoup` + TradingView scanner API for most data, Playwright only for options chain. No LLM involvement in any fetching. It gathers five data sets per symbol, backed by the [TradingView Data Cache](#tradingview-data-cache) to avoid redundant fetches when multiple agents or endpoints (chat, report, analysis) request the same symbol data:
+The solution: `YFinanceDataProvider` (`src/yfinance_data_provider.py`) fetches all market data via the `yfinance` Python library — a clean, zero-auth API wrapper over Yahoo Finance. No browser automation, no scraping, no HTML parsing. It gathers five data sets per symbol with built-in rate limiting (2 calls/sec) and a TTL cache (5 min default) to avoid redundant fetches when multiple agents or endpoints request the same symbol data:
 
-| Data | Method | Typical Size | Content |
-|------|--------|-------------|---------|
-| Overview | `requests` + `BeautifulSoup` (embedded JSON) + scanner API for fundamentals | ~variable | Market cap, P/E, EPS, dividend yield, sector, employees, company description |
-| Technicals | `requests` + `BeautifulSoup` (embedded JSON) + scanner API fallback | ~3K chars | Oscillators (RSI, MACD, Stochastic), moving averages (EMA/SMA 10-200), summary recommendations with Buy/Sell/Neutral signals |
-| Forecast | `requests` + `BeautifulSoup` (embedded JSON) + scanner API fallback | ~2.5K chars | Analyst consensus, price targets (high/median/low), ratings distribution |
-| Dividends | `requests` + `BeautifulSoup` + scanner API | ~variable | Dividend yield, amount, ex-date, payment frequency, payout ratio |
-| Options chain | Playwright `page.on("response")` interception | ~variable | Structured JSON from TradingView scanner API (`scanner.tradingview.com/global/scan2` + `options/scan2`): strikes, bids, asks, greeks, volume, OI. Requires browser authentication — scanner API rejects unauthenticated options requests. Falls back to DOM `innerText` if no API responses captured |
+| Data | Method | Content |
+|------|--------|---------|
+| Overview | `yfinance` Ticker.info | Market cap, P/E, EPS, dividend yield, sector, employees, company description |
+| Technicals | `yfinance` price history + `pandas-ta` indicators | Oscillators (RSI, MACD, Stochastic), moving averages (EMA/SMA 10-200), summary recommendations |
+| Forecast | `yfinance` analyst data | Analyst consensus, price targets (high/median/low), ratings distribution |
+| Dividends | `yfinance` dividend history + info | Dividend yield, amount, ex-date, payment frequency, payout ratio, growth history |
+| Options chain | `yfinance` options API + `py-vollib` Greeks | 23+ expirations (vs ~5 from old source), strikes, bids, asks, computed Greeks (delta, gamma, theta, vega via Black-Scholes), volume, OI |
 
-Playwright and Chromium are initialized lazily — they only start when options chain is actually fetched, saving resources when only the four HTTP-based fetchers run.
+The provider returns each data type as a JSON string, ready for injection into LLM prompts. The `fetch_all(symbol)` convenience method returns all 5 types in a single call.
 
-**Anti-403 resilience:** TradingView fetching includes a 4-phase anti-403 strategy for improved reliability — progressive backoff, header rotation, session refresh, and sequential full-analysis mode as a last resort. Error tracking and stats are displayed on the Settings page.
-
-**Fund-type symbol handling:** For fund-type symbols (e.g., `NYSE:O`) where `_extract_pro_symbol()` returns `None`, the fetcher falls back to a `full_symbol.replace("-", ":", 1)` format to construct valid TradingView URLs.
+**Key advantages over previous architecture:**
+- No browser dependencies (no Playwright, no Chromium)
+- No authentication required
+- 23+ option expirations with full computed Greeks
+- Built-in rate limiting and caching
+- Single dependency (`yfinance`) instead of `requests` + `BeautifulSoup` + Playwright
 
 The agent is created with **no tools** — it only analyzes the pre-fetched data included in its prompt. This is the key pattern: move deterministic multi-step workflows to the host language; let the LLM do what it's good at — analysis.
 
-### TradingView Data Cache
+### Data Cache
 
-An in-memory cache layer (`src/tv_cache.py`) sits between consumers (chat, report, analysis endpoints) and `TradingViewFetcher`, eliminating redundant fetches when multiple agents analyze the same symbol in a short time window.
+The yfinance provider includes a built-in TTL cache that sits between consumers (chat, report, analysis endpoints) and Yahoo Finance, eliminating redundant fetches when multiple agents analyze the same symbol in a short time window.
 
 **How it works:**
 - Cache keys are per-symbol per-data-type: `(symbol, data_type)` where `data_type` is one of `overview`, `technicals`, `forecast`, `dividends`, or `options_chain`
-- Each entry has a configurable TTL — stale entries are evicted automatically
-- Async locking prevents thundering-herd problems: if two agents request the same symbol simultaneously, only one fetch executes; the other awaits the cached result
+- Each entry has a configurable TTL (default 5 minutes) — stale entries are evicted automatically
+- Rate limiting (2 calls/sec) prevents Yahoo Finance throttling
 - The cache is process-local (in-memory) — no external infrastructure required
 
-**Consumers:** The cache is used by the `/chat` endpoint (Portfolio Chat and Quick Analysis), the Report Agent, and the per-symbol analysis runner. Any component that calls `TradingViewFetcher` benefits from deduplication transparently.
+**Consumers:** The cache is used by the `/chat` endpoint (Portfolio Chat and Quick Analysis), the Report Agent, and the per-symbol analysis runner. Any component that calls `YFinanceDataProvider` benefits from deduplication transparently.
 
 ### Per-symbol Context Filtering
 
@@ -349,7 +352,7 @@ All data is stored in Azure CosmosDB across four containers:
 
 | Metric Type | Purpose | Fields |
 |---|---|---|
-| `tv_fetch` | TradingView page fetch timing | resource, duration_seconds, response_size_chars |
+| `data_fetch` | Market data fetch timing | resource, duration_seconds, response_size_chars |
 | `agent_run` | End-to-end agent execution timing | agent_type, duration_seconds |
 
 **`settings` container** (partition key: `/id`) — application configuration persistence:
@@ -437,7 +440,7 @@ Perfect for in-depth analysis of symbols you're actively tracking.
 
 ### Quick Analysis
 
-Analyze any symbol (tracked or not) using live TradingView data, without saving to your database. Quick Analysis fetches:
+Analyze any symbol (tracked or not) using live Yahoo Finance data, without saving to your database. Quick Analysis fetches:
 - Real-time overview (market cap, P/E, dividend yield, etc.)
 - Technical indicators (RSI, MACD, moving averages, etc.)
 - Analyst forecasts (price targets, ratings)
@@ -520,7 +523,7 @@ Each report covers:
 
 1. User clicks "Generate Report" on the symbol detail page
 2. The Report Agent uses the same `AgentRunner → ChatAgent → AzureOpenAIChatClient` pattern as other agents
-3. TradingView data is loaded via the [TradingView Data Cache](#tradingview-data-cache) for fast context assembly
+3. Market data is loaded via the [Data Cache](#data-cache) for fast context assembly
 4. The LLM generates a structured report from the system prompt (`src/tv_report_instructions.py`)
 5. The report is stored in CosmosDB as a `doc_type="report"` document and displayed on a dedicated page (`/symbols/{symbol}/report`)
 
@@ -570,7 +573,7 @@ Stocks must pass all filters before scoring:
 
 ### Data Source
 
-The DGI Screener uses **yfinance** as its primary data source — this is independent of TradingView and does not use the TradingView cache layer. Stock fundamentals, dividend history, and technical indicators are sourced from Yahoo Finance via the `yfinance` Python package. Additionally, **stockanalysis.com** is scraped as a supplementary data source via `requests` + `BeautifulSoup` (`stockanalysis_fetcher.py`). The primary value-add is the authoritative **Growth Years** (consecutive years of dividend increases), which is always preferred over Yahoo's calculated value. Other dividend metrics (yield, payout ratio, dividend growth CAGR) are used as fallback when Yahoo Finance returns zero or missing data. An in-memory cache avoids redundant requests within the same screener run.
+The DGI Screener uses **yfinance** as its primary data source — the same provider used by the trading agents. Stock fundamentals, dividend history, and technical indicators are sourced from Yahoo Finance via the `yfinance` Python package. Additionally, **stockanalysis.com** is scraped as a supplementary data source via `requests` + `BeautifulSoup` (`stockanalysis_fetcher.py`). The primary value-add is the authoritative **Growth Years** (consecutive years of dividend increases), which is always preferred over Yahoo's calculated value. Other dividend metrics (yield, payout ratio, dividend growth CAGR) are used as fallback when Yahoo Finance returns zero or missing data. An in-memory cache avoids redundant requests within the same screener run.
 
 ### Storage
 
@@ -662,9 +665,10 @@ stock-options-manager/
 │   ├── config.py                         # YAML config loader with env var substitution and validation
 │   ├── cosmos_db.py                      # CosmosDB service layer — all database operations
 │   ├── context.py                        # Context injection adapter — formats CosmosDB data for prompts
-│   ├── agent_runner.py                   # Core execution engine — TradingView pre-fetch + per-symbol loop
-│   ├── tv_data_fetcher.py                # Hybrid TradingView data fetcher (BeautifulSoup + scanner API for most data, Playwright for options chain)
-│   ├── tv_cache.py                       # In-memory TradingView data cache with per-key TTL and async locking
+│   ├── agent_runner.py                   # Core execution engine — yfinance pre-fetch + per-symbol loop
+│   ├── yfinance_data_provider.py          # Yahoo Finance data provider (overview, technicals, forecast, dividends, options chain)
+│   ├── options_chain_parser.py           # Options chain parser — TradingView format (legacy compatibility)
+│   ├── options_chain_filters.py          # Options chain filter pipeline + roll candidates table (provider-agnostic)
 │   ├── covered_call_agent.py             # Covered call wrapper
 │   ├── cash_secured_put_agent.py         # Cash secured put wrapper
 │   ├── open_call_monitor_agent.py        # Open call position monitor wrapper
@@ -720,13 +724,13 @@ stock-options-manager/
 - **Alert + Activities** (`/alerts/{agent}/{symbol}/{index}`) — Full alert JSON and backing activities from the same time window.
 - **Symbol Detail** (`/symbols/{symbol}`) — Full detail page for a symbol: expandable positions with source traceability, editable notes field, Close/Roll/Delete actions, activities, alerts, and "Open Position from Alert" / "Roll Position from Alert" buttons on activity detail. Features a **play button** (▶) for running individual symbol analysis on demand. **Generate Report** and **Chat** buttons are aligned right; watchlist toggles are aligned left. Activities support confidence and agent-type filtering. WAIT activities with MODERATE or STRONG supervisor opinions display a 🤔 indicator icon. Activity detail includes collapsible "Supervisor" and "Alpha Advisor" panels with color-coded badges showing audit findings and aggressive alternatives.
 - **Symbol Report** (`/symbols/{symbol}/report`) — Dedicated report display page showing the latest generated report for a symbol (technical analysis, dividends, options chain, risk assessment, and recommendations).
-- **Symbol Chat** (`/symbols/{symbol}/chat`) — Per-symbol chat page with a context selection screen before starting the conversation. Pre-loads TradingView data via the cache layer for faster responses. Supports open call and open put analysis contexts.
-- **Fetch Preview** (`/symbols/{symbol}/fetch-preview`) — Debug page showing raw TradingView data for each resource (overview, technicals, forecast, options chain) with fetch timing and size.
+- **Symbol Chat** (`/symbols/{symbol}/chat`) — Per-symbol chat page with a context selection screen before starting the conversation. Pre-loads market data via the yfinance provider for faster responses. Supports open call and open put analysis contexts.
+- **Fetch Preview** (`/symbols/{symbol}/fetch-preview`) — Debug page showing raw market data for each resource (overview, technicals, forecast, options chain) with fetch timing and size.
 - **Chat** (`/chat`) — Dual-mode chat experience powered by Azure OpenAI:
   - **Portfolio Chat** — Analyze tracked symbols using CosmosDB data (watchlists, positions, recent activities). Click "Portfolio Chat" to ask questions about your tracked symbols.
-  - **Quick Analysis** — Analyze any symbol (tracked or not) by fetching live TradingView data without saving to the database. Click "Quick Analysis", select a market (NASDAQ/NYSE/AMEX/OTC), and get instant analysis without committing to tracking.
+  - **Quick Analysis** — Analyze any symbol (tracked or not) by fetching live Yahoo Finance data without saving to the database. Click "Quick Analysis", select a market (NASDAQ/NYSE/AMEX/OTC), and get instant analysis without committing to tracking.
   - Mode selector on the chat page lets you switch between modes at any time.
-- **Settings** (`/settings`) — Scheduler config, Telegram notifications toggle & test button, Summarization Agent config (cron schedule & activity count), runtime stats (today/7d/30d telemetry), TradingView error tracking and anti-403 stats, a Debug TradingView Fetch tool for testing data fetching per symbol, and an **Agent Chain Pipeline** debug view (`/api/debug/agent-chain/{symbol}`) for inspecting the full two-phase monitor pipeline per symbol. Settings are persisted to CosmosDB and survive application restarts and deployments. Changes made in the Settings UI are immediately available to all components (scheduler, telegram notifier, summarization agent, etc.) without requiring a restart.
+- **Settings** (`/settings`) — Scheduler config, Telegram notifications toggle & test button, Summarization Agent config (cron schedule & activity count), runtime stats (today/7d/30d telemetry), a Debug Data Fetch tool for testing data fetching per symbol, and an **Agent Chain Pipeline** debug view (`/api/debug/agent-chain/{symbol}`) for inspecting the full two-phase monitor pipeline per symbol. Settings are persisted to CosmosDB and survive application restarts and deployments. Changes made in the Settings UI are immediately available to all components (scheduler, telegram notifier, summarization agent, etc.) without requiring a restart.
 - **DGI Screener** (`/dgi`) — Top 20 dividend growth stock candidates ranked by composite quality score. Color-coded category badges, per-row Quick Analysis (▶) and Add to Symbols (➕) actions. Configurable stock universe and filter thresholds via Settings.
 
 ---
@@ -748,15 +752,15 @@ stock-options-manager/
 python -m venv venv
 source venv/bin/activate 
 pip install -r requirements.txt
-playwright install chromium  # Only needed for options chain fetching
 ```
 
 This installs:
 - `agent-framework[foundry]` - Microsoft Agent Framework with Foundry support
-- `beautifulsoup4` - HTML parsing for TradingView overview data and stockanalysis.com dividend scraping
-- `requests` - HTTP client for TradingView scanner API and stockanalysis.com
-- `playwright` - Headless Chromium for options chain fetching only (requires browser authentication)
-- `yfinance` - Yahoo Finance data fetcher for DGI Screener (independent of TradingView)
+- `yfinance` - Yahoo Finance data provider (overview, technicals, forecast, dividends, options chains)
+- `py-vollib` - Black-Scholes Greeks computation for options chain data
+- `pandas-ta` - Technical analysis indicators (RSI, MACD, moving averages, etc.)
+- `requests` - HTTP client for stockanalysis.com dividend scraping
+- `beautifulsoup4` - HTML parsing for stockanalysis.com dividend data
 - `numpy`, `pandas` - Numerical computation and data manipulation for DGI scoring pipeline
 - `pyyaml`, `croniter`, `python-dotenv` - Configuration and scheduling
 
@@ -774,9 +778,9 @@ export AZURE_OPENAI_API_KEY="your-api-key-here"
 export COSMOSDB_ENDPOINT="https://your-account.documents.azure.com:443/"
 export COSMOSDB_KEY="your-primary-key"
 
-# No API key needed for TradingView — overview, technicals, forecast, and dividend data
-# is fetched via HTTP requests + TradingView scanner API. Only options chain requires
-# Playwright browser automation (for authentication).
+# No API key needed for market data — yfinance fetches all data (overview, technicals,
+# forecast, dividends, and options chains) directly from Yahoo Finance. No browser,
+# no scraping, no authentication required.
 ```
 
 #### 3. (Optional) Set Up Telegram Notifications
@@ -812,7 +816,7 @@ Symbols and positions are managed via the **web dashboard** or the CosmosDB API.
 - **Watchlist flags**: `covered_call` and `cash_secured_put` (true/false)
 - **Positions**: Open call/put positions with strike, expiration, and status
 
-The exchange prefix is used to construct TradingView URLs (e.g., `NYSE` + `MO` → `https://www.tradingview.com/symbols/NYSE-MO/`).
+The exchange prefix is stored for reference (e.g., `NYSE` + `MO`).
 
 #### 6. Adjust Configuration (Optional)
 
@@ -876,7 +880,7 @@ The dashboard runs on `http://localhost:8000` by default (configurable in `confi
 
 ### Running with Docker
 
-Build the image (pre-installs Playwright + Chromium for options chain fetching — no Node.js needed):
+Build the image:
 
 ```bash
 docker build -t option-income-lab .
@@ -1165,12 +1169,9 @@ Make sure you've exported the environment variable with your Azure AI Foundry pr
 - Ensure the CosmosDB account, database (`stock-options-manager`), and containers (`symbols`, `telemetry`) exist
 - Run `bash scripts/provision_cosmosdb.sh` to create missing resources
 
-### Playwright / Chromium Issues
-- Playwright is only used for options chain fetching (overview, technicals, forecast, and dividends use HTTP requests + scanner API — Playwright issues won't affect them)
-- Ensure Chromium is installed: `playwright install chromium`
-- First run may be slow while downloading Chromium
-- In Docker, Chromium is pre-installed during image build
-- If overview/technicals/forecast/dividends fail, check network connectivity and TradingView scanner API availability
+### Data Fetching Issues
+- If market data fetching fails, check network connectivity and Yahoo Finance availability
+- yfinance requires no authentication — if you get 429 errors, the built-in rate limiter should handle it
 
 ### Authentication Errors
 Ensure your `AZURE_OPENAI_API_KEY` environment variable is set correctly. You can get your API key from the Azure Portal under your Azure OpenAI resource.
@@ -1186,7 +1187,7 @@ The agent instructions are defined in separate files:
 - `src/tv_open_call_instructions.py` — Open call monitor instructions
 - `src/tv_open_put_instructions.py` — Open put monitor instructions
 
-All instructions assume pre-fetched TradingView data — the LLM receives market data as text and performs analysis only (no browser tools).
+All instructions assume pre-fetched market data — the LLM receives data as text and performs analysis only (no tools, no HTTP access).
 
 ### SDK Information
 
@@ -1196,7 +1197,7 @@ Key components:
 - `agent_framework.Agent` - Main agent class
 - `agent_framework.foundry.FoundryChatClient` - Azure AI Foundry integration
 
-TradingView data is fetched via a hybrid approach: overview, technicals, forecast, and dividends use `requests` + `BeautifulSoup` + TradingView scanner API (`scanner.tradingview.com/america/scan2`); options chain uses Playwright with headless Chromium (requires browser authentication). All fetching is driven from Python (`tv_data_fetcher.py`), not by the LLM. The LLM receives pre-fetched data as text and performs analysis only — no tools are given to the agent.
+Market data is fetched via `yfinance` Python library — overview, technicals, forecast, dividends, and options chains are all retrieved through Yahoo Finance's API. All fetching is driven from Python (`yfinance_data_provider.py`), not by the LLM. The LLM receives pre-fetched data as text and performs analysis only — no tools are given to the agent.
 
 ---
 
