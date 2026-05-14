@@ -210,53 +210,41 @@ class OptionsAgentScheduler:
         asyncio.run(self._run_options_chain_fetch_async())
     
     async def _run_options_chain_fetch_async(self):
-        """Fetch options chain data for all symbols and populate cache."""
+        """Fetch all market data for all symbols via yfinance (pre-warm cache)."""
         options_chain_config = self.config.config.get('options_chain_scheduler', {})
         if not options_chain_config.get('enabled', True):
             print("⏭️  Options chain scheduler disabled in config")
             return
         
-        from .tv_data_fetcher import create_fetcher
-        from .tv_cache import get_tv_cache
+        from .yfinance_data_provider import create_provider
         
         tz = pytz.timezone(self.config.timezone)
         now_tz = datetime.now(tz)
         print(f"\n{'~'*70}")
-        print(f"📈 Options Chain Fetcher - Scheduled run at {now_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"📈 Market Data Fetcher - Scheduled run at {now_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         print(f"{'~'*70}\n")
         
         symbols = self.cosmos.list_symbols()
-        cache = get_tv_cache()
         
-        print(f"Fetching options chain data for {len(symbols)} symbols...")
+        print(f"Fetching market data for {len(symbols)} symbols...")
         success_count = 0
         error_count = 0
         
+        provider = create_provider(getattr(self.config, 'yfinance_config', None))
         for sym_doc in symbols:
             symbol = sym_doc["symbol"]
-            exchange = sym_doc.get("exchange", "NYSE")
-            full_symbol = f"{exchange}:{symbol}"
-            hyphen_symbol = f"{exchange}-{symbol}"
             
             try:
-                async with create_fetcher(self.config) as fetcher:
-                    result = await fetcher.fetch_options_chain(full_symbol)
-                    if result and not result.startswith("No valid response"):
-                        cache.set(hyphen_symbol, "options_chain", result, {
-                            "duration": 0, "size": len(result), "error": False, "cached": False,
-                            "source": "scheduled_fetch"
-                        })
-                        success_count += 1
-                        print(f"  ✓ {hyphen_symbol}: {len(result)} chars cached")
-                    else:
-                        error_count += 1
-                        print(f"  ✗ {hyphen_symbol}: no valid data")
+                data = await provider.fetch_all(symbol, force_refresh=True)
+                oc = data.get("options_chain", "")
+                success_count += 1
+                print(f"  ✓ {symbol}: {len(oc)} chars options chain cached")
             except Exception as e:
                 error_count += 1
-                print(f"  ✗ {hyphen_symbol}: {str(e)}")
+                print(f"  ✗ {symbol}: {str(e)}")
         
         print(f"\n{'~'*70}")
-        print(f"Options Chain Fetch Complete: {success_count} success, {error_count} errors")
+        print(f"Market Data Fetch Complete: {success_count} success, {error_count} errors")
         print(f"{'~'*70}\n")
     
     def run_dgi_screener_job(self):

@@ -14,15 +14,13 @@ from agent_framework.azure import AzureOpenAIChatClient
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
 from .options_chain_parser import (
-    parse_options_chain,
     filter_options_chain_by_type,
     filter_options_chain_for_position,
     filter_options_chain_by_delta,
     filter_options_chain_by_roll_direction,
     format_roll_candidates_table,
-    OPTIONS_CHAIN_SCHEMA_DESCRIPTION,
 )
-from .tv_cache import get_tv_cache as _get_tv_cache
+from .yfinance_data_provider import YFinanceDataProvider, create_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
 from .tv_supervisor_instructions import get_supervisor_instructions, SUPERVISOR_OUTPUT_SCHEMA
 from .tv_alpha_instructions import get_alpha_instructions, ALPHA_OUTPUT_SCHEMA
 
@@ -58,7 +56,7 @@ logger.addHandler(_console_handler)
 
 
 class AgentRunner:
-    """Manages agent execution using Microsoft Agent Framework with TradingView pre-fetch."""
+    """Manages agent execution using Microsoft Agent Framework with yfinance pre-fetch."""
 
     PROLONGED_WAIT_THRESHOLD = 5
     SUPERVISOR_COOLDOWN = 3  # WAITs between repeated supervisor/alpha reviews
@@ -100,8 +98,16 @@ class AgentRunner:
 
     @staticmethod
     def _format_options_chain(raw_chain: str, symbol: str, current_strike: float = None, option_type: str = None) -> str:
-        """Parse raw options chain through the shared parser; fall back to raw."""
-        structured = parse_options_chain(raw_chain, symbol)
+        """Format options chain data for agent consumption.
+
+        The yfinance provider returns already-structured JSON. Parse it
+        and apply filters.
+        """
+        try:
+            structured = json.loads(raw_chain) if isinstance(raw_chain, str) else raw_chain
+        except (json.JSONDecodeError, TypeError):
+            structured = {"calls": {}, "puts": {}}
+
         if structured.get("calls") or structured.get("puts"):
             if option_type:
                 structured = filter_options_chain_by_type(structured, option_type)
@@ -121,8 +127,7 @@ class AgentRunner:
             if null_bid_count > 0:
                 logger.warning(
                     "Options chain for %s: %d/%d contracts have NULL bid — "
-                    "agents will be unable to calculate premium. "
-                    "Likely cause: TradingView API field name change.",
+                    "agents will be unable to calculate premium.",
                     symbol, null_bid_count, total_count,
                 )
 
@@ -131,10 +136,9 @@ class AgentRunner:
                 + json.dumps(structured, indent=2)
             )
         logger.warning(
-            "Options chain for %s: parser returned empty calls/puts — "
-            "falling back to raw text (%d chars). "
-            "Check if TradingView scan URL matching is working.",
-            symbol, len(raw_chain),
+            "Options chain for %s: empty calls/puts — "
+            "falling back to raw text (%d chars).",
+            symbol, len(raw_chain) if raw_chain else 0,
         )
         return raw_chain
 
@@ -153,7 +157,11 @@ class AgentRunner:
         Phase 1 (assessment) the delta, IV, gamma, theta etc. for the
         current position without the full chain noise.
         """
-        structured = parse_options_chain(raw_chain, symbol)
+        try:
+            structured = json.loads(raw_chain) if isinstance(raw_chain, str) else raw_chain
+        except (json.JSONDecodeError, TypeError):
+            structured = {"calls": {}, "puts": {}}
+
         bucket_key = "calls" if option_type == "call" else "puts"
         bucket = structured.get(bucket_key, {})
 
@@ -334,7 +342,10 @@ class AgentRunner:
                 )
                 return json_data
 
-            structured = parse_options_chain(raw_chain, symbol)
+            try:
+                structured = json.loads(raw_chain) if isinstance(raw_chain, str) else raw_chain
+            except (json.JSONDecodeError, TypeError):
+                structured = {"calls": {}, "puts": {}}
             bucket = structured.get(bucket_key, {})
             if not bucket:
                 logger.debug(
@@ -990,12 +1001,10 @@ Provide your alpha advisor analysis in the JSON format specified above."""
             cosmos: CosmosDBService instance for persistence
             context_provider: ContextProvider for activity history injection
             max_activity_entries: Max recent activities for context (0–5)
-            fetcher: TradingViewFetcher instance (shared across symbols)
+            fetcher: YFinanceDataProvider instance (shared across symbols)
         """
-        full_symbol = f"{exchange}-{symbol}" if exchange else symbol
-
-        print(f"\n--- Analyzing {full_symbol} ---")
-        logger.info("Starting pre-fetch + agent.run() for symbol=%s", full_symbol)
+        print(f"\n--- Analyzing {symbol} ---")
+        logger.info("Starting pre-fetch + agent.run() for symbol=%s", symbol)
 
         analysis_ts = datetime.now().strftime(TIMESTAMP_FORMAT)
         run_start = time.time()
@@ -1006,38 +1015,26 @@ Provide your alpha advisor analysis in the JSON format specified above."""
                 symbol, agent_type, max_entries=max_activity_entries,
             )
 
-            # Pre-fetch all TradingView data
-            data = await fetcher.fetch_all(full_symbol,
-                                           force_refresh=True,
-                                           cache=_get_tv_cache())
+            # Pre-fetch all market data via yfinance
+            data = await fetcher.fetch_all(symbol, force_refresh=True)
 
-            # Track partial 403 errors — analysis continues with available data
-            has_data_error = data.get("tv_403", False)
-            if has_data_error:
-                failed = data.get("tv_403_resources", [])
-                logger.warning(
-                    "TradingView 403 on %s for %s — continuing with partial data",
-                    failed, full_symbol,
-                )
-                print(f"⚠️ TradingView 403 on {failed} for {full_symbol} — continuing with partial data")
+            message = f"""Analyze {symbol} (exchange: {exchange}).
 
-            message = f"""Analyze {symbol} (exchange: {exchange}, full symbol: {full_symbol}).
+=== PRE-FETCHED MARKET DATA ===
 
-=== PRE-FETCHED TRADINGVIEW DATA ===
-
---- OVERVIEW PAGE ({exchange}:{symbol}) ---
+--- OVERVIEW ({symbol}) ---
 {data['overview']}
 
---- TECHNICALS PAGE ({exchange}:{symbol}) ---
+--- TECHNICALS ({symbol}) ---
 {data['technicals']}
 
---- FORECAST PAGE ({exchange}:{symbol}) ---
+--- FORECAST ({symbol}) ---
 {data['forecast']}
 
---- DIVIDENDS PAGE ({exchange}:{symbol}) ---
+--- DIVIDENDS ({symbol}) ---
 {data['dividends']}
 
---- OPTIONS CHAIN ({exchange}:{symbol}) ---
+--- OPTIONS CHAIN ({symbol}) ---
 {self._format_options_chain(data.get('options_chain', ''), symbol)}
 
 === END OF DATA ===
@@ -1058,17 +1055,17 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
 
             logger.info(
                 "agent.run() completed for %s – response length=%d",
-                full_symbol, len(response_text),
+                symbol, len(response_text),
             )
             logger.debug(
                 "Response first 500 chars for %s: %s",
-                full_symbol, response_text[:500],
+                symbol, response_text[:500],
             )
 
             print(f"Response: {response_text[:200]}...")
 
             # Parse activity from agent output
-            activity_line, json_data = self._extract_activity_line(full_symbol, response_text)
+            activity_line, json_data = self._extract_activity_line(symbol, response_text)
 
             # Validate premium against actual chain data
             if json_data is not None:
@@ -1092,10 +1089,6 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             # Determine if this is an alert (anything NOT wait/hold/do_nothing)
             is_alert = self._is_alert(response_text, json_data)
             activity_payload["is_alert"] = is_alert
-
-            # Flag partial data when any TradingView resource returned 403
-            if has_data_error:
-                activity_payload["data_error"] = True
             
             # If alert, merge alert-enrichment fields into activity payload
             if is_alert:
@@ -1115,7 +1108,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             prolonged_wait = False
 
             if is_alert:
-                print(f"⚠️ SELL ALERT logged for {full_symbol}")
+                print(f"⚠️ SELL ALERT logged for {symbol}")
                 # Both supervisor + alpha run in parallel
                 supervisor_view, alpha_view = await asyncio.gather(
                     self._run_supervisor_review(
@@ -1136,7 +1129,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             else:
                 prolonged_wait = self._detect_prolonged_wait(cosmos, symbol, agent_type)
                 if prolonged_wait:
-                    print(f"⏳ Prolonged WAIT detected for {full_symbol} — triggering supervisor + alpha review")
+                    print(f"⏳ Prolonged WAIT detected for {symbol} — triggering supervisor + alpha review")
                     # Both supervisor + alpha run in parallel
                     supervisor_view, alpha_view = await asyncio.gather(
                         self._run_supervisor_review(
@@ -1227,9 +1220,9 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
         except Exception as e:
             logger.error(
                 "agent.run() FAILED for %s:\n%s",
-                full_symbol, traceback.format_exc(),
+                symbol, traceback.format_exc(),
             )
-            print(f"Error analyzing {full_symbol}: {e}")
+            print(f"Error analyzing {symbol}: {e}")
             cosmos.write_activity(
                 symbol=symbol,
                 agent_type=agent_type,
@@ -1246,22 +1239,13 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
         # ── Telemetry (best-effort, never blocks) ─────────────────
         try:
             total_duration = round(time.time() - run_start, 2)
-            fetch_stats = getattr(fetcher, "last_fetch_stats", {})
-            for resource, stats in fetch_stats.items():
-                cosmos.write_telemetry("tv_fetch", {
-                    "symbol": symbol,
-                    "resource": resource,
-                    "duration_seconds": stats["duration"],
-                    "response_size_chars": stats["size"],
-                    "error": stats.get("error", False),
-                })
             cosmos.write_telemetry("agent_run", {
                 "symbol": symbol,
                 "agent_type": agent_type,
                 "duration_seconds": total_duration,
             })
         except Exception:
-            logger.debug("Telemetry write skipped for %s", full_symbol)
+            logger.debug("Telemetry write skipped for %s", symbol)
 
     # ------------------------------------------------------------------
     # Position Monitor (single position, CosmosDB-backed)
@@ -1358,22 +1342,20 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             - handoff_json is set when agent outputs an action_needed (ROLL).
             Exactly one of activity_json / handoff_json will be non-None on success.
         """
-        full_symbol = f"{exchange}-{symbol}" if exchange else symbol
-
         message = f"""Analyze open {position_type} position for {symbol}:
 - Current strike: ${strike}
 - Current expiration: {expiration}
 - Exchange: {exchange}
 
-=== PRE-FETCHED TRADINGVIEW DATA ===
+=== PRE-FETCHED MARKET DATA ===
 
---- OVERVIEW PAGE ({exchange}:{symbol}) ---
+--- OVERVIEW ({symbol}) ---
 {data['overview']}
 
---- TECHNICALS PAGE ({exchange}:{symbol}) ---
+--- TECHNICALS ({symbol}) ---
 {data['technicals']}
 
---- FORECAST PAGE ({exchange}:{symbol}) ---
+--- FORECAST ({symbol}) ---
 {data['forecast']}
 
 --- CURRENT CONTRACT ({position_type.upper()} ${strike} exp {expiration}) ---
@@ -1397,11 +1379,11 @@ Analyze the position risk and output your response in the required JSON format. 
 
         logger.info(
             "Phase 1 (assessment) completed for %s – response length=%d",
-            full_symbol, len(response_text),
+            symbol, len(response_text),
         )
         logger.debug(
             "Phase 1 first 500 chars for %s: %s",
-            full_symbol, response_text[:500],
+            symbol, response_text[:500],
         )
         print(f"Phase 1 response: {response_text[:200]}...")
 
@@ -1509,11 +1491,10 @@ Output your activity in the required JSON format. Use the timestamp above in you
             cosmos: CosmosDBService instance
             context_provider: ContextProvider for history injection
             max_activity_entries: Max recent activities for context (0–5)
-            fetcher: TradingViewFetcher instance (shared)
+            fetcher: YFinanceDataProvider instance (shared)
             assessment_instructions: Phase 1 system instructions
             roll_instructions: Phase 2 system instructions
         """
-        full_symbol = f"{exchange}-{symbol}" if exchange else symbol
         strike = position["strike"]
         expiration = position["expiration"]
         position_id = position.get("position_id", "")
@@ -1522,7 +1503,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
         print(f"\n--- Monitoring {symbol} ${strike} exp {expiration} (2-phase) ---")
         logger.info(
             "Position monitor 2-phase for %s strike=%s exp=%s",
-            full_symbol, strike, expiration,
+            symbol, strike, expiration,
         )
 
         analysis_ts = datetime.now().strftime(TIMESTAMP_FORMAT)
@@ -1535,22 +1516,13 @@ Output your activity in the required JSON format. Use the timestamp above in you
                 position_id=position_id,
             )
 
-            data = await fetcher.fetch_all(full_symbol,
-                                           force_refresh=True,
-                                           cache=_get_tv_cache())
-
-            # Track partial 403 errors — analysis continues with available data
-            has_data_error = data.get("tv_403", False)
-            if has_data_error:
-                failed = data.get("tv_403_resources", [])
-                logger.warning(
-                    "TradingView 403 on %s for %s — continuing with partial data",
-                    failed, full_symbol,
-                )
-                print(f"⚠️ TradingView 403 on {failed} for {full_symbol} — continuing with partial data")
+            data = await fetcher.fetch_all(symbol, force_refresh=True)
 
             # Pre-compute the structured filtered chain (for Phase 2)
-            structured_chain = parse_options_chain(data.get('options_chain', ''), symbol)
+            try:
+                structured_chain = json.loads(data.get('options_chain', '{}'))
+            except (json.JSONDecodeError, TypeError):
+                structured_chain = {"calls": {}, "puts": {}}
             if structured_chain.get("calls") or structured_chain.get("puts"):
                 structured_chain = filter_options_chain_by_type(structured_chain, position_type)
                 structured_chain = filter_options_chain_for_position(
@@ -1590,7 +1562,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                 # Phase 1 says action needed → run Phase 2
                 logger.info(
                     "Phase 1 triggered action '%s' for %s — launching Phase 2",
-                    handoff_json.get("action_needed"), full_symbol,
+                    handoff_json.get("action_needed"), symbol,
                 )
                 print(f"↪ Phase 1 action: {handoff_json.get('action_needed')} — running roll management…")
 
@@ -1639,7 +1611,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         handoff_json=handoff_json,
                         filtered_chain_text=filtered_chain_text,
                         analysis_ts=analysis_ts,
-                        full_symbol=full_symbol,
+                        symbol=symbol,
                         model=roll_model,
                     )
                     # Use Phase 2 output as the final result
@@ -1650,9 +1622,9 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     if json_data is None or "activity" not in (json_data or {}):
                         logger.warning(
                             "Phase 2 returned malformed output for %s — degrading to error payload",
-                            full_symbol,
+                            symbol,
                         )
-                        print(f"⚠️ Phase 2 malformed output for {full_symbol} — degrading to error payload")
+                        print(f"⚠️ Phase 2 malformed output for {symbol} — degrading to error payload")
                         raise ValueError("Phase 2 returned no valid activity JSON")
 
                     # Reject bare "ROLL" from Phase 2 — direction is required
@@ -1660,7 +1632,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     if p2_activity == "ROLL":
                         logger.warning(
                             "Phase 2 returned bare 'ROLL' for %s — converting to CLOSE",
-                            full_symbol,
+                            symbol,
                         )
                         json_data["activity"] = "CLOSE"
                         json_data["reason"] = (
@@ -1671,7 +1643,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     elif p2_activity not in VALID_PHASE2_ACTIVITIES:
                         logger.warning(
                             "Phase 2 returned invalid activity '%s' for %s — converting to CLOSE",
-                            p2_activity, full_symbol,
+                            p2_activity, symbol,
                         )
                         json_data["activity"] = "CLOSE"
                         json_data["reason"] = (
@@ -1688,7 +1660,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         if new_strike is None or new_expiration is None:
                             logger.warning(
                                 "Phase 2 returned %s for %s without new_strike/new_expiration — converting to CLOSE",
-                                p2_activity, full_symbol,
+                                p2_activity, symbol,
                             )
                             json_data["activity"] = "CLOSE"
                             json_data["reason"] = (
@@ -1704,7 +1676,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         elif json_data.get("roll_economics") is None:
                             logger.warning(
                                 "Phase 2 returned %s for %s without roll_economics — converting to CLOSE",
-                                p2_activity, full_symbol,
+                                p2_activity, symbol,
                             )
                             json_data["activity"] = "CLOSE"
                             json_data["reason"] = (
@@ -1718,9 +1690,9 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     # the only agent that selects strike/expiration.
                     logger.error(
                         "Phase 2 (roll mgmt) FAILED for %s: %s\n%s",
-                        full_symbol, phase2_err, traceback.format_exc(),
+                        symbol, phase2_err, traceback.format_exc(),
                     )
-                    print(f"⚠️ Phase 2 error for {full_symbol}: {phase2_err} — persisting as CLOSE with error flag")
+                    print(f"⚠️ Phase 2 error for {symbol}: {phase2_err} — persisting as CLOSE with error flag")
 
                     # Build a degraded CLOSE activity from the handoff JSON
                     _raw_reason = handoff_json.get("reason", "")
@@ -1767,7 +1739,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                     if json_data.get("new_strike") is None or json_data.get("new_expiration") is None:
                         logger.warning(
                             "Safety net: %s for %s has no targets — converting to CLOSE",
-                            _final_act, full_symbol,
+                            _final_act, symbol,
                         )
                         json_data["activity"] = "CLOSE"
                         json_data["new_strike"] = None
@@ -1782,7 +1754,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                         )
 
             # ── Persist activity (common path) ────────────────────────
-            activity_line, json_data = self._extract_activity_line(full_symbol, response_text) if json_data is None else (
+            activity_line, json_data = self._extract_activity_line(symbol, response_text) if json_data is None else (
                 self._extract_summary_line(response_text) or "", json_data
             )
 
@@ -1820,9 +1792,6 @@ Output your activity in the required JSON format. Use the timestamp above in you
             is_alert = self._is_alert(response_text, json_data)
             activity_payload["is_alert"] = is_alert
 
-            # Flag partial data when any TradingView resource returned 403
-            if has_data_error:
-                activity_payload["data_error"] = True
             
             # If alert, merge alert-enrichment fields into activity payload
             if is_alert:
@@ -1838,7 +1807,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
             )
             
             if is_alert:
-                print(f"⚠️ ROLL ALERT logged for {full_symbol} ${strike} exp {expiration}")
+                print(f"⚠️ ROLL ALERT logged for {symbol} ${strike} exp {expiration}")
 
                 # ── Supervisor always runs; Alpha only on alerts / prolonged waits ──
                 market_data = self._build_market_data_block(data, symbol, exchange)
@@ -1918,7 +1887,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                 prolonged_wait = self._detect_prolonged_wait(cosmos, symbol, agent_type, position_id=position_id)
 
                 if prolonged_wait:
-                    print(f"⏳ Prolonged WAIT detected for {full_symbol} ${strike} — triggering supervisor + alpha review")
+                    print(f"⏳ Prolonged WAIT detected for {symbol} ${strike} — triggering supervisor + alpha review")
                     # Both supervisor + alpha run in parallel
                     supervisor_view, alpha_view = await asyncio.gather(
                         self._run_supervisor_review(
@@ -1986,9 +1955,9 @@ Output your activity in the required JSON format. Use the timestamp above in you
         except Exception as e:
             logger.error(
                 "Position monitor FAILED for %s strike=%s exp=%s:\n%s",
-                full_symbol, strike, expiration, traceback.format_exc(),
+                symbol, strike, expiration, traceback.format_exc(),
             )
-            print(f"Error monitoring {full_symbol} ${strike} exp {expiration}: {e}")
+            print(f"Error monitoring {symbol} ${strike} exp {expiration}: {e}")
             cosmos.write_activity(
                 symbol=symbol,
                 agent_type=agent_type,
@@ -2024,7 +1993,7 @@ Output your activity in the required JSON format. Use the timestamp above in you
                 "two_phase": True,
             })
         except Exception:
-            logger.debug("Telemetry write skipped for %s", full_symbol)
+            logger.debug("Telemetry write skipped for %s", symbol)
 
     async def run_summary_agent(
         self,
@@ -2271,29 +2240,28 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
         """Generate a comprehensive position/situation report for a symbol.
 
         Uses ChatAgent to produce a structured markdown report from
-        pre-gathered context (TradingView data + CosmosDB activities).
+        pre-gathered context (market data + CosmosDB activities).
 
         Args:
             symbol: Ticker symbol (e.g. "AAPL")
             exchange: Exchange code (e.g. "NASDAQ")
             context_text: Pre-built context string with all data
             cosmos: CosmosDBService for storing the report
-            cached_resources: TradingView resources served from cache
+            cached_resources: Resources served from cache
 
         Returns:
             The generated markdown report text.
         """
         from .tv_report_instructions import TV_REPORT_INSTRUCTIONS
 
-        full_symbol = f"{exchange}-{symbol}" if exchange else symbol
         analysis_ts = datetime.now().strftime(TIMESTAMP_FORMAT)
 
-        logger.info("Starting report agent for %s", full_symbol)
-        print(f"\n--- Generating report for {full_symbol} ---")
+        logger.info("Starting report agent for %s", symbol)
+        print(f"\n--- Generating report for {symbol} ---")
 
         run_start = time.time()
 
-        message = f"""Generate a comprehensive situation report for {symbol} (exchange: {exchange}, full symbol: {full_symbol}).
+        message = f"""Generate a comprehensive situation report for {symbol} (exchange: {exchange}).
 
 === AVAILABLE DATA ===
 
@@ -2314,7 +2282,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
 
         run_duration = round(time.time() - run_start, 2)
         logger.info("Report agent completed for %s in %.2fs (%d chars)",
-                     full_symbol, run_duration, len(report_text))
+                     symbol, run_duration, len(report_text))
         print(f"✅ Report generated ({run_duration}s, {len(report_text)} chars)")
 
         # Persist report to CosmosDB

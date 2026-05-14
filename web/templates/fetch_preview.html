@@ -4,8 +4,8 @@
 {% block content %}
 <div class="page-header">
     <a href="/symbols/{{ symbol_doc.symbol }}" class="back-link">← {{ symbol_doc.display_name }}</a>
-    <h1>🔍 Raw TradingView Data — {{ symbol_doc.display_name }}</h1>
-    <p style="opacity:0.6; margin-top:0.25rem;">Fetches live data via Playwright. This typically takes 30–60 seconds.</p>
+    <h1>🔍 Raw Market Data — {{ symbol_doc.display_name }}</h1>
+    <p style="opacity:0.6; margin-top:0.25rem;">Fetches live data via yfinance. This typically takes 2–5 seconds.</p>
 </div>
 
 <div style="margin-bottom:1.5rem; display:flex; align-items:center; gap:1rem;">

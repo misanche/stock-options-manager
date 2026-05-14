@@ -721,3 +721,21 @@ Added "Run DGI Screener" button to web dashboard with backing API. Pattern follo
 - The `client` property provides backward compatibility for any code referencing `self.client`
 - `web/app.py` chat endpoints use `AzureOpenAI` directly (not `AgentRunner`), so model override is applied to the `model` variable before the completion call
 - All model overrides are optional — omitting `azure.models` section entirely preserves existing behavior
+
+### Phase 2 — Pipeline Swap: TradingView → yfinance (2026-07)
+**Status:** ✅ Completed  
+**Scope:** Replace ALL TradingView data fetching with yfinance-based provider across the entire application
+
+**Key changes:**
+- `config.yaml`: `tradingview:` section → `yfinance:` section (cache_ttl, options_chain DTE, rate_limit, randomize_symbols)
+- `src/config.py`: Replaced 6 `tradingview_*` properties with 3 yfinance properties
+- `src/agent_runner.py`: Replaced imports, removed `parse_options_chain` (use `json.loads`), removed TV 403/`has_data_error` handling, removed exchange-prefix logic (`EXCHANGE-SYMBOL` → plain `SYMBOL`), simplified fetch to `await provider.fetch_all(symbol)`
+- `src/covered_call_agent.py`, `src/cash_secured_put_agent.py`, `src/open_call_monitor_agent.py`, `src/open_put_monitor_agent.py`: Replaced `async with create_fetcher(config) as fetcher:` pattern with `create_provider()` singleton
+- `src/main.py`: Scheduler `_run_options_chain_fetch_async` rewritten for yfinance
+- `web/app.py`: All endpoints updated (startup, options-chain, debug, fetch-preview, cache, chat). Fixed `_build_symbol_context` to accept `provider` parameter instead of accessing `request.app.state` directly
+- Templates: Removed TradingView/Playwright references
+
+**Decisions:**
+- Clean cut (no fallback) — old TV code left in repo but unreferenced
+- `preferences` API key stays `"tradingview"` for backward compat with frontend
+- Filter imports remain from `options_chain_parser` until Linus creates `options_chain_filters.py`

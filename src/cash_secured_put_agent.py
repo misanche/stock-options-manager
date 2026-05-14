@@ -16,7 +16,7 @@ async def run_cash_secured_put_analysis(config, runner: AgentRunner,
         runner: Initialized AgentRunner instance
         cosmos: CosmosDBService instance
         context_provider: ContextProvider for activity history
-        symbol: Optional symbol to filter analysis (e.g., 'NYSE-AAPL')
+        symbol: Optional symbol to filter analysis (e.g., 'AAPL')
     """
     print(f"\n{'='*60}")
     print(f"Starting CashSecuredPutAgent analysis" + (f" for {symbol}" if symbol else ""))
@@ -36,30 +36,30 @@ async def run_cash_secured_put_analysis(config, runner: AgentRunner,
         if not csp_symbols:
             print("No symbols enabled for cash-secured put — skipping")
             return
-        if getattr(config, 'tradingview_randomize_symbols', True):
+        if getattr(config, 'yfinance_randomize_symbols', True):
             random.shuffle(csp_symbols)
 
     symbol_names = [s["symbol"] for s in csp_symbols]
     print(f"Analyzing {len(csp_symbols)} symbols: {', '.join(symbol_names)}")
 
-    from .tv_data_fetcher import create_fetcher
+    from .yfinance_data_provider import create_provider
 
+    provider = create_provider(getattr(config, 'yfinance_config', None))
     for sym_doc in csp_symbols:
-        async with create_fetcher(config) as fetcher:
-            await runner.run_symbol_agent(
-                name="CashSecuredPutAgent",
-                instructions=TV_CASH_SECURED_PUT_INSTRUCTIONS,
-                symbol=sym_doc["symbol"],
-                exchange=sym_doc["exchange"],
-                agent_type="cash_secured_put",
-                cosmos=cosmos,
-                context_provider=context_provider,
-                max_activity_entries=config.max_activity_entries,
-                fetcher=fetcher,
-                model=config.model_for('analysis'),
-                supervisor_model=config.model_for('supervisor'),
-                alpha_model=config.model_for('alpha'),
-            )
+        await runner.run_symbol_agent(
+            name="CashSecuredPutAgent",
+            instructions=TV_CASH_SECURED_PUT_INSTRUCTIONS,
+            symbol=sym_doc["symbol"],
+            exchange=sym_doc["exchange"],
+            agent_type="cash_secured_put",
+            cosmos=cosmos,
+            context_provider=context_provider,
+            max_activity_entries=config.max_activity_entries,
+            fetcher=provider,
+            model=config.model_for('analysis'),
+            supervisor_model=config.model_for('supervisor'),
+            alpha_model=config.model_for('alpha'),
+        )
 
     print(f"\n{'='*60}")
     print(f"Completed CashSecuredPutAgent analysis")
