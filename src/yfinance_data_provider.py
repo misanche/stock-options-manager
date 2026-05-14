@@ -7,6 +7,7 @@ consumption.
 
 import json
 import logging
+import math
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -587,8 +588,6 @@ class YFinanceDataProvider:
 # ======================================================================
 # Helper
 # ======================================================================
-
-import math
 
 def _is_nan(value) -> bool:
     """Check if a value is NaN (handles None, float NaN, numpy NaN)."""

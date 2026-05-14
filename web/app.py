@@ -233,8 +233,13 @@ async def init_cosmos(app_instance):
 async def startup():
     await init_cosmos(app)
     # Initialize yfinance provider singleton
-    from src.yfinance_data_provider import create_provider
-    app.state.yf_provider = create_provider()
+    try:
+        from src.yfinance_data_provider import create_provider
+        app.state.yf_provider = create_provider()
+        logger.info("YFinance data provider initialized successfully")
+    except Exception as e:
+        logger.exception("YFinance provider init failed")
+        app.state.yf_provider = None
 
 
 def _get_cosmos(request: Request):
