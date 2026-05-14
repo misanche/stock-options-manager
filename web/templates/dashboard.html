@@ -185,6 +185,9 @@
             {% if item.activity and item.activity | upper == 'WAIT' and sv_dash and sv_dash.challenge_strength in ['MODERATE', 'STRONG'] %}
             <span class="review-indicator review-indicator-{{ sv_dash.challenge_strength | lower }}" title="Supervisor {{ sv_dash.challenge_strength }}: {{ sv_dash.one_liner | default('') }}">🤔</span>
             {% endif %}
+            {% if item.alpha_view %}
+            <span class="alpha-indicator" title="Alpha Advisor: {{ item.alpha_view.one_liner | default('') }}">🧠</span>
+            {% endif %}
             <span class="badge badge-{{ item.activity | lower if item.activity else 'info' }}">{{ item.activity or "N/A" }}</span>
             <span class="activity-agent">{{ item._agent_label }}</span>
             <strong>{{ item.symbol }}</strong>

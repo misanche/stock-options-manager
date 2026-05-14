@@ -437,6 +437,9 @@
                         {% if d.activity and d.activity | upper == 'WAIT' and sv_sym and sv_sym.challenge_strength in ['MODERATE', 'STRONG'] %}
                         <span class="review-indicator review-indicator-{{ sv_sym.challenge_strength | lower }}" title="Supervisor {{ sv_sym.challenge_strength }}: {{ sv_sym.one_liner | default('') }}">🤔</span>
                         {% endif %}
+                        {% if d.alpha_view %}
+                        <span class="alpha-indicator" title="Alpha Advisor: {{ d.alpha_view.one_liner | default('') }}">🧠</span>
+                        {% endif %}
                         <span class="badge badge-{{ (d.activity | default('UNKNOWN', true)) | lower }}">{{ d.activity | default("—", true) }}</span>
                     </td>
                     <td class="mono">
