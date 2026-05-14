@@ -1700,3 +1700,30 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - Fix: unconditionally divide `dividendYield` by 100. No conditional needed.
 - The display template must multiply stored decimal values by 100 for percentage display (consistent with how CAGR was already handled).
 - Filter modal line 459 `(fc.actual * 100)` was already correct for decimal — it was producing 88% because the input was 0.88 (percentage) not 0.0088 (decimal).
+
+### yfinance Feasibility Analysis for Full Data Source Replacement (2026-05)
+- **yfinance can replace TradingView + StockAnalysis.com for ~90% of data needs.** Comprehensive analysis written to `.squad/decisions/inbox/linus-yfinance-feasibility.md`.
+- **Options chain is the biggest win:** yfinance provides 23+ expiration dates (vs. TV's ~5), plus volume, open interest, and last trade date. Eliminates Playwright browser interception entirely.
+- **Fundamentals/dividends/forecast:** 95%+ coverage via `ticker.info` (150+ keys), `ticker.analyst_price_targets`, `ticker.recommendations_summary`. All TradingView scanner fields have direct equivalents.
+- **Technicals:** yfinance provides raw OHLCV only — all oscillators/MAs must be computed. `dgi_metrics.py` already computes RSI/SMA/Bollinger. Remaining ~12 indicators (Stochastic, CCI, ADX, MACD, Williams %R, etc.) are standard formulas or can use `pandas-ta` library.
+- **Greeks are the main gap:** yfinance option chains include IV but NOT delta/gamma/theta/vega/rho. Must compute via Black-Scholes using `py_vollib` or scipy (~50 lines). Inputs (S, K, T, r, sigma) all available from yfinance data.
+- **Key risk:** Losing StockAnalysis.com cross-check for dividend growth years. Our `calculate_years_consecutive_increases()` from Yahoo dividend series is the fallback but was known to be less reliable than SA.
+- **Elimination wins:** No Playwright (~50MB Chromium), no anti-bot detection (User-Agent rotation, 403 recovery, warmup pages), no HTML parsing fragility, no TradingView endpoint migrations (the scan/scan2/scan3 breakage that caused premium=0.0 becomes impossible).
+
+---
+
+## 2026-05-14 — yfinance Feasibility Deep-Dive
+
+**Session:** 20260514T0539Z  
+**Outcome:** Comprehensive feasibility analysis delivered to decisions.md
+
+### Analysis Results
+- **Verdict:** yfinance can replace TradingView and StockAnalysis.com for ~90% of data needs
+- **Options Chains:** 23+ expiration dates vs TradingView's ~5 (major win)
+- **Greeks Gap:** IV available, delta/gamma/theta/vega/rho computed via Black-Scholes
+- **Technicals Gap:** OSC signals lost but already computed locally (RSI/SMA/Bollinger in dgi_metrics.py)
+- **Impact:** Eliminates all scraping fragility (Playwright, anti-bot detection, 403s)
+
+### Deliverable
+- Document: `decisions.md` → yfinance Feasibility Deep-Dive section
+- Verdict: ✅ Fully feasible, proceed with architecture transition

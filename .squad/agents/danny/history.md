@@ -417,3 +417,60 @@ tradingview:
 
 **Decision doc:** `.squad/decisions/inbox/danny-dgi-screener.md` (v2, overwrites v1)
 **Status:** Proposed — awaiting user approval to begin Phase 1 implementation
+
+### 2026-05-14: yfinance Full Migration — Architecture Transition Plan
+
+**Context:** Linus completed feasibility deep-dive confirming yfinance can replace TradingView + StockAnalysis.com for ~90% of data needs (remaining 10% is computable: Greeks via Black-Scholes, technicals from OHLCV). User directive: NO fallback, clean cut.
+
+**Architecture Decisions Made:**
+
+1. **New `yfinance_data_provider.py`** — High-level orchestrator (separate from existing `yfinance_fetcher.py` which stays as low-level wrapper). Clean separation of concerns: fetcher knows yfinance, provider knows agent data contracts.
+
+2. **Options chain format preserved** — Keep existing expiration→strike→contract dict structure. Build from DataFrames instead of parsing raw scanner JSON. Add volume, openInterest, lastTradeDate (yfinance bonus data). Remove OPRA symbols, bid_iv/ask_iv.
+
+3. **Greeks in dedicated `greeks_calculator.py`** — Black-Scholes via `py_vollib`. Separate module for testability. Risk-free rate from ^TNX with 4.5% fallback.
+
+4. **Technicals in dedicated `technicals_calculator.py`** — Uses `pandas-ta` for 15+ indicators. Ports signal logic from `tv_data_fetcher.py`. Consolidates with `dgi_metrics.py` (DGI metrics delegates to this for RSI/SMA/Bollinger).
+
+5. **Pivot points dropped** — Replaced with SMA-based strike selection guidance. Can add back if agents struggle.
+
+6. **All `tv_*` instruction files renamed** (drop prefix) — 14 files. Content updated to remove TradingView references, add liquidity/staleness guidance.
+
+7. **Caching simplified** — Replace `tv_cache.py` (async locks, per-resource TTLs) with simple TTL dict. yfinance is fast enough.
+
+**File Impact:** 7 files deleted (4,227 lines), 3 new files created (~830 lines), 16 files modified, 12 instruction files renamed+updated. Net: ~3,400 lines removed, Dockerfile loses Playwright (~200MB image reduction).
+
+**5 Phases:** Foundation (1d, Linus) → Pipeline Swap (1.5d, Rusty) → Instructions (1d, Linus) → Cleanup (0.5d, Rusty) → Optimization (1d, both). Total: 4-5 days.
+
+**Key Risk:** Options chain format mismatch is highest severity. Mitigated by keeping exact same dict structure and testing end-to-end in Phase 2 before proceeding.
+
+**Decision doc:** `.squad/decisions/inbox/danny-yfinance-transition-plan.md`
+**Status:** Approved — ready for Phase 1 implementation
+
+---
+
+## 2026-05-14 — Architecture Transition Plan (yfinance Migration)
+
+**Session:** 20260514T0539Z  
+**Outcome:** 5-phase transition plan delivered to decisions.md
+
+### Plan Summary
+- **Duration:** 4-5 days estimated
+- **Files to Delete:** 7 files (4,227 lines)
+  - `tv_data_fetcher.py`, `tv_cache.py`, `stockanalysis_fetcher.py`, `options_chain_parser.py`
+  - `TRADINGVIEW_ANTI_BOT.md`, legacy instruction files
+- **Files to Create:** 3 files
+  - `yfinance_data_provider.py` (unified provider)
+  - `greeks_calculator.py` (Black-Scholes)
+  - `technicals_calculator.py` (indicators)
+- **Files to Modify:** 16 files (core agents, config, screeners)
+
+### Phases
+1. **Phase 1:** Create new provider modules
+2. **Phase 2:** Update agents to use new provider
+3. **Phase 3:** Delete legacy code
+4. **Phase 4:** Config migration
+5. **Phase 5:** Testing and validation
+
+### Status
+✅ Plan approved. Ready for implementation.
