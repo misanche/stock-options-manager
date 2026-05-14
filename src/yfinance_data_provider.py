@@ -21,6 +21,11 @@ from src.yfinance_fetcher import YFinanceFetcher
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache of the last yfinance options chain per symbol.
+# Populated when market is open; used to merge with TradingView fallback
+# data (which only covers ~5 nearest expirations) when market is closed.
+_chain_cache: dict[str, dict] = {}
+
 try:
     import yfinance as yf
 except ImportError:
@@ -500,13 +505,42 @@ class YFinanceDataProvider:
                 has_data = bool(tv_result.get("calls") or tv_result.get("puts"))
                 if has_data:
                     tv_result["market_status"] = "closed"
-                    logger.info(
-                        "%s: TradingView fallback successful — %d call expirations, "
-                        "%d put expirations",
-                        symbol,
-                        len(tv_result.get("calls", {})),
-                        len(tv_result.get("puts", {})),
-                    )
+
+                    # Merge: overlay TV expirations on top of cached yfinance data
+                    cached = _chain_cache.get(symbol)
+                    if cached:
+                        tv_call_count = len(tv_result.get("calls", {}))
+                        tv_put_count = len(tv_result.get("puts", {}))
+                        merged = {
+                            "symbol": symbol,
+                            "timestamp": tv_result.get("timestamp", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                            "market_status": "closed",
+                            "calls": dict(cached.get("calls", {})),
+                            "puts": dict(cached.get("puts", {})),
+                        }
+                        # TV expirations overwrite matching cached expirations
+                        for exp_key, strikes in tv_result.get("calls", {}).items():
+                            merged["calls"][exp_key] = strikes
+                        for exp_key, strikes in tv_result.get("puts", {}).items():
+                            merged["puts"][exp_key] = strikes
+                        tv_result = merged
+                        logger.info(
+                            "%s: TradingView data merged with cached yfinance data — "
+                            "total %d call exp, %d put exp (TV contributed %d/%d)",
+                            symbol,
+                            len(merged["calls"]),
+                            len(merged["puts"]),
+                            tv_call_count,
+                            tv_put_count,
+                        )
+                    else:
+                        logger.info(
+                            "%s: TradingView fallback successful (no cache to merge) — "
+                            "%d call expirations, %d put expirations",
+                            symbol,
+                            len(tv_result.get("calls", {})),
+                            len(tv_result.get("puts", {})),
+                        )
                     return json.dumps(tv_result, default=str)
                 else:
                     logger.warning(
@@ -580,6 +614,14 @@ class YFinanceDataProvider:
             "%s: options chain built via yfinance (market_status=%s)",
             symbol, result["market_status"],
         )
+
+        # Cache yfinance result when market is open for later merge with TV fallback
+        if market_open and (result.get("calls") or result.get("puts")):
+            import copy
+            _chain_cache[symbol] = copy.deepcopy(result)
+            logger.debug("%s: cached yfinance chain (%d call exp, %d put exp)",
+                         symbol, len(result.get("calls", {})), len(result.get("puts", {})))
+
         return json.dumps(result, default=str)
 
     def _process_option_df(self, df: pd.DataFrame, option_type: str,

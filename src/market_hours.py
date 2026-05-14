@@ -1,117 +1,96 @@
-"""US market hours detection utility.
+"""US market open detection via live options-data probe.
 
-Determines whether the US stock market is currently open based on
-regular trading hours (Mon–Fri 9:30 AM – 4:00 PM Eastern), excluding
-federal holidays observed by NYSE/NASDAQ.
+Instead of calendar/rule-based heuristics, we check whether the market
+is actually open by probing real bid/ask data from a liquid option
+(MSFT ATM call, nearest expiration) via yfinance.  When the market is
+closed, yfinance returns zeroed bid/ask — this is a reliable signal.
+
+Result is cached for 5 minutes to avoid excessive API calls.
 """
 
 import logging
-from datetime import date, datetime, time
+import time as _time
+from datetime import datetime
 
-import pytz
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-_ET = pytz.timezone("US/Eastern")
+# -- Probe configuration ------------------------------------------------
+_PROBE_SYMBOL = "MSFT"
+_CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# Regular trading hours (Eastern Time)
-_MARKET_OPEN = time(9, 30)
-_MARKET_CLOSE = time(16, 0)
-
-# -------------------------------------------------------------------
-# US market holidays — rule-based for any year
-# -------------------------------------------------------------------
-
-def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
-    """Return the *n*-th occurrence of *weekday* (0=Mon) in *month*."""
-    first = date(year, month, 1)
-    offset = (weekday - first.weekday()) % 7
-    return date(year, month, 1 + offset + 7 * (n - 1))
+# -- Module-level cache --------------------------------------------------
+_cached_result: bool | None = None
+_cached_at: float = 0.0
 
 
-def _easter(year: int) -> date:
-    """Anonymous Gregorian algorithm for Easter Sunday."""
-    a = year % 19
-    b, c = divmod(year, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    l = (32 + 2 * e + 2 * i - h - k) % 7  # noqa: E741
-    m = (a + 11 * h + 22 * l) // 451
-    month, day = divmod(h + l - 7 * m + 114, 31)
-    return date(year, month, day + 1)
+def _probe_market_open() -> bool:
+    """Probe live bid/ask on a liquid MSFT ATM call option.
 
-
-def _good_friday(year: int) -> date:
-    from datetime import timedelta
-    return _easter(year) - timedelta(days=2)
-
-
-def us_market_holidays(year: int) -> set[date]:
-    """Return the set of NYSE-observed holidays for *year*.
-
-    Covers: New Year's Day, MLK Day, Presidents' Day, Good Friday,
-    Memorial Day, Juneteenth, Independence Day, Labor Day,
-    Thanksgiving, Christmas.
-
-    When a holiday falls on Saturday it is observed on Friday; when it
-    falls on Sunday it is observed on Monday.
+    Returns True if bid or ask > 0 (market open), False otherwise.
     """
-    holidays: set[date] = set()
+    try:
+        ticker = yf.Ticker(_PROBE_SYMBOL)
+        expirations = ticker.options
+        if not expirations:
+            logger.warning("Market probe: no option expirations for %s — assuming CLOSED", _PROBE_SYMBOL)
+            return False
 
-    def _observe(d: date) -> date:
-        if d.weekday() == 5:  # Saturday → Friday
-            return d.replace(day=d.day - 1)
-        if d.weekday() == 6:  # Sunday → Monday
-            return d.replace(day=d.day + 1)
-        return d
+        nearest_exp = expirations[0]
+        chain = ticker.option_chain(nearest_exp)
+        calls = chain.calls
 
-    # Fixed-date holidays (with weekend adjustment)
-    holidays.add(_observe(date(year, 1, 1)))    # New Year's Day
-    holidays.add(_observe(date(year, 6, 19)))   # Juneteenth
-    holidays.add(_observe(date(year, 7, 4)))    # Independence Day
-    holidays.add(_observe(date(year, 12, 25)))  # Christmas
+        if calls is None or calls.empty:
+            logger.warning("Market probe: empty call chain for %s %s — assuming CLOSED", _PROBE_SYMBOL, nearest_exp)
+            return False
 
-    # Floating holidays
-    holidays.add(_nth_weekday(year, 1, 0, 3))   # MLK Day — 3rd Monday Jan
-    holidays.add(_nth_weekday(year, 2, 0, 3))   # Presidents' Day — 3rd Mon Feb
-    holidays.add(_good_friday(year))             # Good Friday
-    # Memorial Day — last Monday in May
-    last_mon_may = date(year, 5, 31)
-    while last_mon_may.weekday() != 0:
-        last_mon_may = last_mon_may.replace(day=last_mon_may.day - 1)
-    holidays.add(last_mon_may)
-    holidays.add(_nth_weekday(year, 9, 0, 1))   # Labor Day — 1st Monday Sep
-    holidays.add(_nth_weekday(year, 11, 3, 4))  # Thanksgiving — 4th Thursday Nov
+        # Pick the ATM call (closest strike to current price)
+        current_price = ticker.fast_info.get("lastPrice") or ticker.fast_info.get("last_price")
+        if current_price is None:
+            # Fallback: use the middle of the chain
+            atm_row = calls.iloc[len(calls) // 2]
+        else:
+            idx = (calls["strike"] - current_price).abs().idxmin()
+            atm_row = calls.loc[idx]
 
-    return holidays
+        bid = atm_row.get("bid") or 0
+        ask = atm_row.get("ask") or 0
+
+        if bid > 0 or ask > 0:
+            logger.info(
+                "Market probe: %s %s ATM call strike=%.1f bid=%.2f ask=%.2f → OPEN",
+                _PROBE_SYMBOL, nearest_exp, atm_row.get("strike", 0), bid, ask,
+            )
+            return True
+
+        logger.info(
+            "Market probe: %s %s ATM call strike=%.1f bid=%.2f ask=%.2f → CLOSED",
+            _PROBE_SYMBOL, nearest_exp, atm_row.get("strike", 0), bid, ask,
+        )
+        return False
+
+    except Exception:
+        logger.exception("Market probe failed — assuming CLOSED")
+        return False
 
 
 def is_us_market_open(now: datetime | None = None) -> bool:
-    """Return *True* if the US stock market is currently in regular
-    trading hours.
+    """Return *True* if the US stock market is currently open.
 
-    Parameters
-    ----------
-    now : datetime, optional
-        Override for current time (must be timezone-aware).  Defaults to
-        ``datetime.now(pytz.UTC)``.
+    Probes live options bid/ask data.  The ``now`` parameter is accepted
+    for backward compatibility but ignored — we trust real market data.
+
+    Results are cached for ~5 minutes to limit API calls.
     """
-    if now is None:
-        now = datetime.now(pytz.UTC)
+    global _cached_result, _cached_at
 
-    et_now = now.astimezone(_ET)
+    current_time = _time.monotonic()
+    if _cached_result is not None and (current_time - _cached_at) < _CACHE_TTL_SECONDS:
+        logger.debug("Market probe: returning cached result → %s", "OPEN" if _cached_result else "CLOSED")
+        return _cached_result
 
-    # Weekend check
-    if et_now.weekday() >= 5:
-        return False
-
-    # Holiday check
-    if et_now.date() in us_market_holidays(et_now.year):
-        return False
-
-    # Time-of-day check
-    current_time = et_now.time()
-    return _MARKET_OPEN <= current_time < _MARKET_CLOSE
+    result = _probe_market_open()
+    _cached_result = result
+    _cached_at = current_time
+    return result

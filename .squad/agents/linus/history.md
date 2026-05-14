@@ -1812,3 +1812,34 @@ Renamed all 14 instruction files to drop the misleading `tv_` prefix (leftover f
 - Updated `Dockerfile`: added `playwright install chromium --with-deps` after pip install.
 - All 96 tests pass unchanged.
 - Key pattern: When a primary data source has known gaps (off-hours zeros), a targeted fallback for specific data types is better than a full fallback. The fallback must produce identical output structure so consumers don't need conditional logic.
+
+### Market Hours: Calendar-Based → Live Probe Replacement (2026-07)
+- Replaced `src/market_hours.py` entirely — removed ~100 lines of calendar/holiday/time-of-day logic with a live options-data probe.
+- New approach: probes MSFT ATM call bid/ask via yfinance. If bid or ask > 0 → market OPEN. Both 0/None → CLOSED. This naturally handles half-days, unexpected closures, timezone edge cases.
+- 5-minute TTL cache (`time.monotonic()` based) prevents excessive API hits — module-level globals `_cached_result` / `_cached_at`.
+- Conservative error handling: any exception from yfinance → assume CLOSED (prevents bad data from being acted on).
+- Function signature `is_us_market_open(now=None)` preserved for backward compatibility — `now` param accepted but ignored.
+- Only caller: `src/yfinance_data_provider.py` line 478 via `from src.market_hours import is_us_market_open`.
+- No new dependencies added — yfinance already in requirements.txt.
+- No tests existed for the old implementation; none broken.
+- Key pattern: When you have a reliable runtime signal (live bid/ask data), prefer it over calendar heuristics. Rules-based approaches always have edge cases; real data doesn't lie.
+
+### Chain Merge Logic (TV + yfinance cache)
+**Date**: 2025-07-23
+**Task**: Merge TradingView fallback data with cached yfinance chains
+
+#### What was done
+- Added module-level `_chain_cache: dict[str, dict]` in `src/yfinance_data_provider.py` (line ~25)
+- When market is OPEN and yfinance builds a chain successfully, a deepcopy is stored in `_chain_cache[symbol]`
+- When market is CLOSED and TV fallback returns data, it's merged on top of cached yfinance data:
+  - Start with cached expirations (full set from yfinance)
+  - Overwrite with TV expirations (fresher closed-market data for ~5 nearest)
+  - Result: full expiration coverage with fresh near-term data
+- If no cache exists (cold start during closed market), TV data used as-is
+
+## Learnings
+- TradingView scraper only returns ~5 nearest expirations; yfinance returns all within DTE range
+- Module-level dict is sufficient for in-memory caching in this single-process architecture
+- `copy.deepcopy` needed to avoid mutation of cached data during merge
+- Key file: `src/yfinance_data_provider.py`, method `_build_options_chain` (line ~470)
+- Cache is ephemeral (lost on restart) — acceptable tradeoff per user decision

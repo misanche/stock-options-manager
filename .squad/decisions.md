@@ -3134,3 +3134,115 @@ Store as-is in the output (matching TV format where `dividends_yield` was alread
 - **Format consistency**: Matches TradingView API format
 - **Agent simplicity**: Agents receive display-ready values
 - **Calculation safety**: If Greeks calculator needs decimal form, convert locally
+
+---
+
+## 30. Decision: Market Hours Detection — Live Options Probe vs. Calendar Rules
+
+**Author:** Linus (Quant Dev)  
+**Date:** 2026-05-14  
+**Status:** ✅ Implemented  
+
+### Context
+The original `src/market_hours.py` used rule-based detection:
+- Fixed calendar (9:30–16:00 EST, Mon–Fri)
+- Holiday table (10 NYSE holidays)
+- Timezone conversions via `pytz`
+
+This approach couldn't handle half-days, unexpected closures, or timezone edge cases reliably.
+
+### Problem
+Half-days are not consistent year to year. Unexpected market closures (e.g., weather events) are unpredictable. Calendar maintenance becomes a burden, and the detection is reactive rather than observational.
+
+### Decision
+Replace `is_us_market_open()` with a **live probe** that checks MSFT ATM call bid/ask via yfinance:
+1. Fetch MSFT nearest-expiration call chain: `yf.Ticker("MSFT").option_chain()`
+2. Find ATM call (closest strike to current price)
+3. If bid > 0 OR ask > 0 → **OPEN**; both 0/None → **CLOSED**
+4. Cache result for 5 minutes (monotonic clock) to limit API calls
+5. On any exception → conservative fallback to **CLOSED**
+
+### Key Design Choices
+- **Observable signal**: yfinance returns zeroed bid/ask when market is closed — direct, unambiguous indicator
+- **No new dependencies**: Already using yfinance throughout the system
+- **Network cost mitigated**: 5-minute cache reduces overhead; app already makes yfinance calls
+- **Conservative fallback**: On error, assume market is closed (safer for agent scheduling)
+
+### Tradeoffs
+- **Network dependency**: Old approach was pure calculation. New approach requires ~1–2s network latency on cache miss.
+- **yfinance availability**: System already depends on yfinance; this doesn't add new risk.
+- **Latency**: ~1–2s on cache miss is acceptable given 5-minute TTL and existing yfinance calls in the pipeline.
+
+### Consequences
+- Eliminates holiday table maintenance
+- Handles half-days and closures automatically
+- Simplifies code (no `pytz`, no complex logic)
+- Can be deployed immediately with zero configuration
+
+### Files Changed
+- `src/market_hours.py` — fully replaced
+
+### No Changes Required
+- `src/yfinance_data_provider.py` — same import, same function signature
+- Agent instructions — no logic changes needed
+- Framework (Rusty) — no framework changes needed
+
+---
+
+## 31. Decision: Options Chain Merge Strategy — Preserve yfinance Cache During Market Closure
+
+**Author:** Linus (Quant Dev)  
+**User Directive:** dsanchor (2026-05-14T19:24)  
+**Date:** 2026-05-14  
+**Status:** ✅ Implemented  
+
+### Context
+yfinance provides the full options chain during market open. When market closes, yfinance returns zeroed bid/ask/IV/volume (Decision 30 uses this to detect closure). The TradingView Playwright fallback (see Decision: Hybrid Options Chain, 2026-07) scrapes ~5 nearest expirations when market is closed, but we lose access to the 6th, 7th, etc. longer-dated contracts that were available during the open.
+
+### Problem
+Agents analyzing stale-but-useful longer-dated expirations during closed hours lose data. Example: analyzing a 60-DTE covered call candidate at 22:00 when market has closed — we can't see the 60 DTE strike data even though we fetched it 6 hours earlier at market close.
+
+### User Directive (2026-05-14T19:24 via Copilot)
+> "When market is closed and TradingView Playwright fallback is used for options chains, only overwrite the expiration dates that TradingView provides (typically 5 nearest). Keep any additional expirations (6th, 7th, etc.) that were previously fetched from yfinance during market open hours. This preserves stale-but-useful data beyond the 5 expirations TradingView covers."
+
+### Decision
+Implement an in-memory merge strategy in `src/yfinance_data_provider.py`:
+
+**On Market Open (yfinance succeeds):**
+- Store a deepcopy of the successful options chain in a module-level `_chain_cache[symbol]`
+- Overwrites previous session's cache
+
+**On Market Close (yfinance returns zeros, TV fallback used):**
+1. Retrieve cached yfinance chain (if exists)
+2. Start merge with full cached dict (all expirations)
+3. Overwrite only the expirations that TradingView scraped (typically 5 nearest)
+4. Keep all other expirations from cache untouched
+5. If no cache exists (cold start during closed market), use TV data as-is (no regression)
+
+### Implementation
+- **Module-level cache**: `_chain_cache = {}` dict persisting for app lifetime
+- **Cache key**: symbol (e.g., `_chain_cache["AAPL"]`)
+- **Cache value**: deepcopy of options chain dict (strike-keyed)
+- **On merge**: Start with cached dict, then `update()` with TV data for overlapping expirations
+- **Output format unchanged**: Both paths (yfinance + TV + merge) produce identical strike-keyed dict
+
+### Tradeoffs
+- **In-memory only**: Cache is lost on app restart. Acceptable — next market-open fetch repopulates it immediately.
+- **Stale far-dated data**: Cached expirations beyond TV's scrape range may have 1–6+ hour stale prices. Trade-off accepted: stale data > no data for strategy evaluation.
+- **No TTL**: Cache doesn't expire by time; only overwrites on next market-open successful fetch. Staleness is bounded to one trading day (market open → market close).
+- **Chain format**: Optional `market_status` field ("open"/"closed") allows consumers to detect which path was taken, but no logic changes required.
+
+### Consequences
+- **Agents**: Access to stale-but-useful 6th+ expirations during market closure. No instruction changes needed — chain format identical.
+- **Rusty (Framework)**: No framework changes. Data provider is self-contained.
+- **Deployment**: Adds zero new dependencies (deepcopy is stdlib).
+
+### Files Changed
+- `src/yfinance_data_provider.py`:
+  - Added module-level `_chain_cache` dict
+  - Modified `_build_options_chain()` to cache on success and merge on TV fallback
+
+### Related Decisions
+- Decision 30: Market Hours Detection (signals when cache should be applied)
+- Decision: Hybrid Options Chain (context for TV fallback)
+
