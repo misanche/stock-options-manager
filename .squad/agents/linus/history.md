@@ -1748,3 +1748,26 @@ Note: Scoring functions in `dgi_metrics.py` treat dividend_yield as ratio (thres
 - Works on the unified dict format (YYYYMMDD→strike→contract) shared between TradingView parser and yfinance provider.
 - Updated `README.md` to reflect yfinance migration: replaced all TradingView/Playwright/BS4/scanner API references in architecture, data gathering, pre-fetch, cache, setup, Docker, troubleshooting, and project structure sections.
 - Key pattern: The filter pipeline is provider-agnostic — it operates on the structured dict format regardless of data source. This is why extraction into a standalone module makes sense.
+
+### Phase 2 Completed — Filters Extraction + README Rewrite (2026-07)
+**Status:** ✅ Completed  
+**Commit:** 917c882  
+**Files Created/Modified:** 2 (220+/850-)  
+
+Executed parallel Phase 2 track: extracted options chain filter pipeline into standalone `src/options_chain_filters.py` module (16.8 KB); completely rewrote README to document yfinance as single data source, eliminating all TradingView/Playwright/BeautifulSoup references.
+
+**Extraction rationale:** Filter functions work on provider-agnostic unified dict format (YYYYMMDD→strike→contract). Keeping in `options_chain_parser.py` unnecessarily couples them to TV parser. Standalone module enables clean imports without pulling TV-specific code.
+
+**README changes:**
+- Opening: yfinance direct API, no browser/scraping/auth
+- Architecture: Yahoo Finance as data source, updated agent/container counts
+- Pre-fetch section: Renamed to "Pre-fetch Architecture (yfinance)"
+- Cache section: "Data Cache" with TTL + rate limiting
+- Setup: Removed `playwright install chromium`, added `py-vollib`, `pandas-ta`
+- Docker: Removed Chromium pre-install
+- Troubleshooting: "Data Fetching Issues" replaces "Playwright / Chromium Issues"
+- All TradingView/Playwright/BS4 references removed (15+ sections affected)
+
+**Backward compatibility:** Existing imports from `options_chain_parser` still work; new code imports from `options_chain_filters`.
+
+**Impact:** Documentation fully aligned with yfinance architecture; onboarding and Docker setup reflect scraping elimination.

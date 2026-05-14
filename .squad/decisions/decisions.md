@@ -2536,3 +2536,98 @@ options_chain_scheduler:
 - [ ] `config.yaml` has no `tradingview:` section
 - [ ] `requirements.txt` has no `playwright` or `beautifulsoup4`
 - [ ] README updated with yfinance data source description
+
+---
+
+## Phase 2 Completed — Implementation Decisions
+
+### Rusty Phase 2 — Pipeline Swap: TradingView → yfinance
+**Status:** ✅ Completed (2026-07)  
+**Agent:** Rusty  
+**Scope:** Replace ALL TradingView data fetching with yfinance provider across entire application
+
+#### Decisions Made
+
+1. **Clean cut — no fallback**
+   - Removed all TradingView import paths and error handling (403, Playwright) from active code
+   - Old `tv_data_fetcher.py` and `tv_cache.py` remain in repo but are unreferenced
+
+2. **Exchange prefix removed from fetch calls**
+   - Old: `f"{exchange}-{symbol}"` or `f"{exchange}:{symbol}"` → New: plain `symbol`
+   - Exchange field still stored in CosmosDB, used for display/context only
+
+3. **`parse_options_chain()` replaced with `json.loads()`**
+   - yfinance provider returns pre-structured JSON matching same schema
+   - HTML parser no longer needed; filter functions still work unchanged
+
+4. **Provider singleton pattern**
+   - web/app.py: `app.state.yf_provider` initialized at startup
+   - Agent wrappers: one `create_provider()` call per batch, shared across symbols
+   - Built-in in-memory cache (keyed by symbol, TTL from config)
+
+5. **API backward compatibility**
+   - `preferences` dict key `"tradingview"` kept to avoid breaking frontend
+   - Now controls yfinance market data inclusion
+
+6. **`has_data_error` / `data_error` flag removed**
+   - TV-specific 403 tracking deleted entirely
+   - yfinance raises exceptions on failure (no partial data with error flags)
+
+#### Implementation Details
+- Files changed: 13 (391+/451-)
+- config.yaml: tradingview → yfinance section
+- Affected modules: agent_runner, covered_call_agent, cash_secured_put_agent, open_call_monitor_agent, open_put_monitor_agent, main.py, web/app.py
+- Templates cleaned of TV/Playwright references
+
+---
+
+### Linus Phase 2 — Options Filters Extraction + README
+**Status:** ✅ Completed (2026-07)  
+**Agent:** Linus  
+**Scope:** Parallel Phase 2 track — Standalone filter module + yfinance documentation
+
+#### Decision 1: Options Chain Filters as Standalone Module
+
+**Created:** `src/options_chain_filters.py` (16.8 KB)
+
+- Extracted 5-function filter pipeline from `options_chain_parser.py`
+- Functions: `filter_options_chain_by_type`, `filter_options_chain_for_position`, `filter_options_chain_by_delta`, `filter_options_chain_by_roll_direction`, `format_roll_candidates_table`
+- Works on unified dict format (YYYYMMDD→strike→contract) from both TV parser and yfinance provider
+- Zero dependency on `options_chain_parser.py` — fully self-contained
+
+**Rationale:**
+- Filter functions work on provider-agnostic structured format
+- Keeping in `options_chain_parser.py` couples unnecessarily to TV parser
+- Standalone enables clean imports without pulling TV-specific code
+
+**Migration Note:**
+- Existing imports from `options_chain_parser` still work (backward compat)
+- New code should import from `options_chain_filters`
+
+#### Decision 2: README — yfinance as Single Data Source
+
+**Updated:** README.md — Comprehensive yfinance migration documentation
+
+**Changes:**
+- Opening: yfinance direct API, no browser/scraping/auth
+- Architecture: Yahoo Finance as data source
+- Pre-fetch section: Renamed to "Pre-fetch Architecture (yfinance)"
+- Cache section: Renamed to "Data Cache", describes built-in TTL + rate limiting
+- Setup: Removed `playwright install chromium`, added `py-vollib`, `pandas-ta`
+- Docker: Removed Playwright/Chromium pre-install
+- Troubleshooting: Replaced "Playwright / Chromium Issues" with "Data Fetching Issues"
+- Removed all TradingView/Playwright/BS4 references
+
+**Impact:**
+- Documentation, onboarding, Docker setup fully aligned with yfinance architecture
+- Eliminates confusion about scraping capabilities and requirements
+
+---
+
+## Phase 2 Summary
+
+Both Rusty and Linus tracks completed in parallel:
+- **Rusty:** 13 files modified, full pipeline swap to yfinance, clean cut, singleton provider, backward API compat
+- **Linus:** Filters module extracted (provider-agnostic), README fully refreshed, yfinance as canonical data source
+- **Result:** Application is yfinance-native, no TradingView/Playwright/scraping in active codebase
+- **Tests:** 127 passed, 22 failed (old TV tests slated for Phase 4 deletion)

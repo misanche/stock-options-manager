@@ -739,3 +739,23 @@ Added "Run DGI Screener" button to web dashboard with backing API. Pattern follo
 - Clean cut (no fallback) — old TV code left in repo but unreferenced
 - `preferences` API key stays `"tradingview"` for backward compat with frontend
 - Filter imports remain from `options_chain_parser` until Linus creates `options_chain_filters.py`
+
+### Phase 2 Completed — Pipeline Swap Implementation (2026-07)
+**Status:** ✅ Completed  
+**Commit:** f727866  
+**Files Changed:** 13 (391+/451-)  
+
+Implemented clean cut replacement of all TradingView data fetching with yfinance provider across the entire application. Removed exchange prefix logic, simplified provider singleton pattern, eliminated TV-specific error handling. Maintained API backward compatibility by keeping `preferences["tradingview"]` key. Coordinated with Linus parallel track (options_chain_filters.py extraction + README update).
+
+**Key decisions:**
+1. Clean cut — old TV code unreferenced but left in repo
+2. No exchange prefix in fetch calls (plain `symbol` to `provider.fetch_all()`)
+3. Provider singleton with in-memory TTL cache
+4. `preferences["tradingview"]` controls yfinance market data inclusion
+5. Removed `has_data_error` / 403 tracking entirely
+
+**Affected modules:** agent_runner, covered_call_agent, cash_secured_put_agent, open_call_monitor_agent, open_put_monitor_agent, main.py, web/app.py, config.yaml, templates.
+
+**Test results:** 127 passed, 22 failed (old TV tests slated for Phase 4 deletion).
+
+**Open items:** Old TV files (`tv_data_fetcher.py`, `tv_cache.py`) can be deleted once Phase 2 validated in production.
