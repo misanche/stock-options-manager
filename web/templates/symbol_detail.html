@@ -418,7 +418,6 @@
                     <th>Underlying</th>
                     <th>Confidence</th>
                     <th>Risk</th>
-                    <th>Details</th>
                 </tr>
             </thead>
             <tbody>
@@ -467,12 +466,7 @@
                         <span class="badge badge-risk-{{ d.assignment_risk | lower }}">{{ d.assignment_risk }}</span>
                         {% else %}—{% endif %}
                     </td>
-                    <td>
-                        {{ d.reason[:120] ~ ("…" if d.reason | length > 120 else "") if d.reason else "—" }}
-                        {% for flag in (d.risk_flags or []) %}
-                        <span class="flag">{{ flag }}</span>
-                        {% endfor %}
-                    </td>
+
                 </tr>
                 {% endfor %}
             </tbody>
