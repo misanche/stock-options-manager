@@ -103,10 +103,10 @@
                     <td>{{ row.expiration if row.expiration else "—" }}</td>
                     <td class="num metric-value">{{ "$%.2f" | format(row.premium) if row.premium else "—" }}</td>
                     {% endif %}
-                    <td>
+                    <td><div class="flags-wrap">
                         {% for flag in (row.risk_flags or []) %}
                         <span class="flag">{{ flag }}</span>
-                        {% endfor %}
+                        {% endfor %}</div>
                     </td>
                     <td>
                         <button class="btn-trigger-row" data-agent="{{ agent.key }}" data-symbol="{{ row.symbol }}" title="Run analysis for {{ row.symbol }}">▶</button>

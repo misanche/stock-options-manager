@@ -361,6 +361,13 @@ tbody td:last-child, thead th:last-child { text-align: right; width: 1%; white-s
 .risk-rating-high { background: #cf222e; color: #fff; }
 .risk-rating-very-high { background: #82071e; color: #fff; }
 
+.flags-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    max-width: 180px;
+}
+
 .flag {
     display: inline-block;
     padding: 0.1rem 0.4rem;
@@ -368,7 +375,7 @@ tbody td:last-child, thead th:last-child { text-align: right; width: 1%; white-s
     border-radius: var(--radius-pill);
     font-size: 0.7rem;
     color: var(--text-muted);
-    margin: 1px 2px;
+    white-space: nowrap;
 }
 
 .mono { font-family: var(--font-mono); }
