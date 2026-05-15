@@ -166,8 +166,6 @@ class YFinanceDataProvider:
         self._cache: Dict[str, Dict[str, Any]] = {}
         config = config or {}
         self._cache_ttl = config.get("cache_ttl", 300)
-        self._min_dte = config.get("min_dte", 7)
-        self._max_dte = config.get("max_dte", 90)
 
     async def fetch_all(self, symbol: str, *, force_refresh: bool = False) -> dict:
         """Fetch all data for a symbol.
@@ -585,7 +583,7 @@ class YFinanceDataProvider:
                 continue
 
             dte = (exp_date - now).days
-            if dte < self._min_dte or dte > self._max_dte:
+            if dte < 0:
                 continue
 
             exp_key = exp_date.strftime("%Y%m%d")

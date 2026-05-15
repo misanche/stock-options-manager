@@ -151,11 +151,8 @@ class Config:
     def yfinance_config(self) -> dict:
         """Return the full yfinance config section for the provider factory."""
         yf = self.config.get('yfinance', {})
-        oc = yf.get('options_chain', {})
         return {
             "cache_ttl": int(yf.get('cache_ttl', 300)),
-            "min_dte": int(oc.get('min_dte', 7)),
-            "max_dte": int(oc.get('max_dte', 90)),
         }
 
     @property
