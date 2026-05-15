@@ -85,8 +85,8 @@
     </div>
 
     {% if symbol_doc.positions %}
-    <div class="table-wrap" style="overflow-x: hidden;">
-        <table id="positionsTable" style="width:100%; table-layout: auto;">
+    <div class="table-wrap" style="overflow-x: auto;">
+        <table id="positionsTable" style="min-width:100%; width:max-content; table-layout: auto;">
             <thead>
                 <tr>
                     <th style="width:2rem;"></th>
@@ -406,8 +406,8 @@
         </div>
     </div>
     {% if activities %}
-    <div class="table-wrap">
-        <table id="activities-table">
+    <div class="table-wrap" style="overflow-x: auto;">
+        <table id="activities-table" style="min-width:100%; width:max-content;">
             <thead>
                 <tr>
                     <th>Timestamp</th>
