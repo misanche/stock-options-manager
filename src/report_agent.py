@@ -100,8 +100,8 @@ async def run_report_analysis(
     try:
         from .yfinance_data_provider import create_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
 
-        async with create_provider(config) as provider:
-            yf_data = await provider.fetch_all(symbol)
+        provider = create_provider(config)
+        yf_data = await provider.fetch_all(symbol)
         cached_resources = yf_data.get("cached_resources", [])
 
         for section_key, section_label in [

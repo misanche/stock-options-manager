@@ -2350,7 +2350,6 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
 === END OF DATA ===
 
 Current timestamp: {analysis_ts}
-Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Please analyze this data and generate your analysis."""
 
         agent = ChatAgent(
