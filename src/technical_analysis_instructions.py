@@ -142,7 +142,7 @@ Present 3 scenarios for the stock price in the coming weeks/months:
 
 ## FORMATTING RULES
 
-- Write primarily in **Spanish** (the user's language) but keep technical terms in English where they are universally used (RSI, MACD, ADX, Covered Call, Cash Secured Put, strike, put, call, delta, DTE)
+- Write in English
 - Use markdown tables where appropriate
 - Keep tables compact with narrow columns
 - Be precise with numbers and dates
