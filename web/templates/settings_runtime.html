@@ -7,6 +7,27 @@
     <p class="subtitle">Agent runs and fetch performance metrics.</p>
 </div>
 
+<!-- Option Chain Source -->
+<div class="card settings-card">
+    <div class="card-header">
+        <h2>🔗 Primary Option Chain Source</h2>
+    </div>
+    <div style="padding: 0.75rem 1.25rem;">
+        <div class="summary-card summary-card-market {{ 'market-open' if chain_source == 'yfinance' else ('market-closed' if chain_source == 'tradingview' else 'market-unknown') }}" style="border:none; box-shadow:none; padding:0.5rem 0;">
+            <span class="market-dot">●</span>
+            <div class="summary-label" style="margin-top:0.4rem; font-size:0.95rem;">
+                {% if chain_source == 'yfinance' %}
+                    yfinance <span style="color:var(--text-muted); font-size:0.8rem;">(market open — live data)</span>
+                {% elif chain_source == 'tradingview' %}
+                    TradingView <span style="color:var(--text-muted); font-size:0.8rem;">(market closed — Playwright fallback)</span>
+                {% else %}
+                    Unknown <span style="color:var(--text-muted); font-size:0.8rem;">(could not determine market status)</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Scheduler Status -->
 <div class="card settings-card">
     <div class="card-header">

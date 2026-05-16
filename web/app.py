@@ -2192,11 +2192,21 @@ async def settings_runtime_page(request: Request):
         except Exception:
             pass
 
+    # Determine primary options chain source based on market hours
+    market_open = is_us_market_open()
+    if market_open is True:
+        chain_source = "yfinance"
+    elif market_open is False:
+        chain_source = "tradingview"
+    else:
+        chain_source = "unknown"
+
     return templates.TemplateResponse("settings_runtime.html", {
         "request": request,
         "telemetry_stats": telemetry_stats,
         "last_run": last_run,
         "next_run": next_run,
+        "chain_source": chain_source,
     })
 
 
