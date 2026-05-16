@@ -20,10 +20,7 @@
         <div class="summary-value">{{ position_count }}</div>
         <div class="summary-label">Open Positions</div>
     </div>
-    <div class="summary-card summary-card-market {{ 'market-open' if market_open == true else ('market-closed' if market_open == false else 'market-unknown') }}">
-        <div class="market-dot">●</div>
-        <div class="summary-label">{{ "Market Open" if market_open == true else ("Market Closed" if market_open == false else "Market Unknown") }}</div>
-    </div>
+
     <div class="summary-card summary-card-action">
         <button id="run-full-analysis" class="btn-trigger btn-trigger-blue" title="Run all agents sequentially">▶▶ Run Full Analysis</button>
     </div>
