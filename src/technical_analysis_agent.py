@@ -51,7 +51,7 @@ async def run_technical_analysis(
     try:
         from .yfinance_data_provider import create_provider
 
-        provider = create_provider(config)
+        provider = create_provider(getattr(config, 'yfinance_config', None))
         yf_data = await provider.fetch_all(symbol)
         cached_resources = yf_data.get("cached_resources", [])
 
