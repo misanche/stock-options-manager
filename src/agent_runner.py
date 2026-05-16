@@ -2303,3 +2303,84 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
             logger.debug("Telemetry write skipped for report agent")
 
         return report_text
+
+    # ------------------------------------------------------------------
+    # Technical Analysis Agent
+    # ------------------------------------------------------------------
+
+    async def run_technical_analysis_agent(
+        self,
+        symbol: str,
+        exchange: str,
+        context_text: str,
+        cosmos: CosmosDBService,
+        cached_resources: list | None = None,
+        model: str = None,
+    ) -> str:
+        """Generate a detailed technical analysis for a symbol.
+
+        Uses ChatAgent to produce a structured markdown analysis from
+        pre-gathered market data (technicals, overview, forecast, dividends).
+
+        Args:
+            symbol: Ticker symbol (e.g. "AAPL")
+            exchange: Exchange code (e.g. "NASDAQ")
+            context_text: Pre-built context string with all data
+            cosmos: CosmosDBService for storing the analysis
+            cached_resources: Resources served from cache
+
+        Returns:
+            The generated markdown analysis text.
+        """
+        from .technical_analysis_instructions import TECHNICAL_ANALYSIS_INSTRUCTIONS
+
+        analysis_ts = datetime.now().strftime(TIMESTAMP_FORMAT)
+
+        logger.info("Starting technical analysis agent for %s", symbol)
+        print(f"\n--- Generating technical analysis for {symbol} ---")
+
+        run_start = time.time()
+
+        message = f"""Generate a comprehensive technical analysis for {symbol} (exchange: {exchange}).
+
+=== AVAILABLE DATA ===
+
+{context_text}
+
+=== END OF DATA ===
+
+Current timestamp: {analysis_ts}
+All market data has been pre-fetched above. Do NOT use any browser tools — analyze the data provided and generate your analysis."""
+
+        agent = ChatAgent(
+            chat_client=self._get_client(model),
+            name="TechnicalAnalysisAgent",
+            instructions=TECHNICAL_ANALYSIS_INSTRUCTIONS,
+        )
+        result = await agent.run(message)
+        analysis_text = result.text or str(result)
+
+        run_duration = round(time.time() - run_start, 2)
+        logger.info("Technical analysis agent completed for %s in %.2fs (%d chars)",
+                     symbol, run_duration, len(analysis_text))
+        print(f"✅ Technical analysis generated ({run_duration}s, {len(analysis_text)} chars)")
+
+        # Persist to CosmosDB
+        cosmos.write_technical_analysis(
+            symbol=symbol,
+            analysis_markdown=analysis_text,
+            cached_resources=cached_resources or [],
+            timestamp=analysis_ts,
+        )
+
+        # Telemetry (best-effort)
+        try:
+            cosmos.write_telemetry("agent_run", {
+                "symbol": symbol,
+                "agent_type": "technical_analysis",
+                "duration_seconds": run_duration,
+            })
+        except Exception:
+            logger.debug("Telemetry write skipped for technical analysis agent")
+
+        return analysis_text

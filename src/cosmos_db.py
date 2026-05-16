@@ -808,6 +808,35 @@ class CosmosDBService:
         ))
         return results[0] if results else None
 
+    # ── Technical Analysis ────────────────────────────────────────────
+
+    def write_technical_analysis(self, symbol: str, analysis_markdown: str,
+                                 cached_resources: list | None = None,
+                                 timestamp: str | None = None) -> dict:
+        """Write a generated technical analysis document.
+
+        Args:
+            symbol: Ticker symbol (partition key).
+            analysis_markdown: Full markdown analysis from the agent.
+            cached_resources: List of data provider resources served from cache.
+            timestamp: Override timestamp (ISO format). Defaults to now.
+
+        Returns:
+            The created CosmosDB document.
+        """
+        ts = timestamp or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts_compact = ts.replace("-", "").replace(":", "").replace("T", "_")[:15]
+
+        doc = {
+            "id": f"{symbol}_technical_analysis_{ts_compact}",
+            "symbol": symbol,
+            "doc_type": "technical_analysis",
+            "timestamp": ts,
+            "analysis": analysis_markdown,
+            "cached_resources": cached_resources or [],
+        }
+        return self.container.create_item(doc)
+
     # ── Telemetry ──────────────────────────────────────────────────────
 
     def write_telemetry(self, metric_type: str, data: dict) -> None:

@@ -1187,6 +1187,90 @@ async def symbol_report_page(request: Request, symbol: str):
     })
 
 
+@app.post("/api/symbols/{symbol}/technical-analysis")
+async def symbol_technical_analysis_api(request: Request, symbol: str):
+    """Generate a detailed technical analysis for a symbol.
+
+    Uses the TechnicalAnalysisAgent to produce a structured markdown analysis
+    from cached market data (technicals, overview, forecast, dividends).
+    """
+    symbol = symbol.upper()
+
+    try:
+        cosmos = _get_cosmos(request)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+    symbol_doc = cosmos.get_symbol(symbol)
+    if not symbol_doc:
+        return JSONResponse({"error": f"Symbol {symbol} not found"},
+                            status_code=404)
+
+    # Build an AgentRunner on demand
+    config = _load_config()
+    azure_cfg = config.get("azure", {})
+    endpoint = _resolve_env(azure_cfg.get("project_endpoint", ""))
+    model = _resolve_env(azure_cfg.get("model_deployment", "gpt-4o"))
+    api_key = _resolve_env(azure_cfg.get("api_key", ""))
+
+    if not endpoint:
+        return JSONResponse({"error": "Azure endpoint not configured"},
+                            status_code=500)
+    if not api_key:
+        return JSONResponse({"error": "Azure API key not configured"},
+                            status_code=500)
+
+    if endpoint.endswith("/api"):
+        endpoint = endpoint[:-4]
+
+    try:
+        from src.agent_runner import AgentRunner
+        from src.technical_analysis_agent import run_technical_analysis
+        from src.config import Config
+
+        config_obj = Config()
+        runner = AgentRunner(
+            project_endpoint=endpoint,
+            model=model,
+            api_key=api_key,
+        )
+
+        result = await run_technical_analysis(
+            config=config_obj,
+            runner=runner,
+            cosmos=cosmos,
+            symbol=symbol,
+        )
+
+        if "error" in result:
+            return JSONResponse({"error": result["error"]}, status_code=404)
+
+        return JSONResponse(result)
+
+    except Exception as e:
+        logger.exception("Technical analysis generation failed for %s", symbol)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/symbols/{symbol}/technical-analysis", response_class=HTMLResponse)
+async def symbol_technical_analysis_page(request: Request, symbol: str):
+    """Render the dedicated technical analysis page for a symbol."""
+    cosmos = getattr(request.app.state, "cosmos", None)
+    if cosmos is None:
+        error_detail = getattr(request.app.state, "cosmos_error", "unknown")
+        return HTMLResponse(f"CosmosDB not available: {error_detail}",
+                            status_code=503)
+
+    doc = cosmos.get_symbol(symbol.upper())
+    if not doc:
+        return HTMLResponse(f"Symbol {symbol} not found", status_code=404)
+
+    return templates.TemplateResponse("symbol_technical_analysis.html", {
+        "request": request,
+        "symbol_doc": doc,
+    })
+
+
 @app.get("/symbols/{symbol}/options-chain", response_class=HTMLResponse)
 async def symbol_options_chain_page(request: Request, symbol: str):
     """Render the option chain visualisation page for a symbol."""
