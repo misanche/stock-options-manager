@@ -8,8 +8,8 @@ import traceback
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from agent_framework import ChatAgent
-from agent_framework.integrations.azure.openai import AzureAIAgentClient
+from agent_framework import Agent
+from agent_framework.azure import AzureAIAgentClient
 
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
@@ -84,7 +84,7 @@ class AgentRunner:
             logger.info("Creating AzureAIAgentClient for deployment=%s", deployment)
             self._clients[deployment] = AzureAIAgentClient(
                 endpoint=self._endpoint,
-                model_deployment=deployment,
+                model_deployment_name=deployment,
                 api_key=self._api_key,
             )
         return self._clients[deployment]
@@ -733,8 +733,8 @@ class AgentRunner:
 
 Provide your supervisor audit in the JSON format specified above."""
 
-            agent = ChatAgent(
-                chat_client=self._get_client(model),
+            agent = Agent(
+                client=self._get_client(model),
                 name=f"Supervisor_{agent_type}",
                 instructions=instructions,
             )
@@ -863,8 +863,8 @@ Provide your supervisor audit in the JSON format specified above."""
 
 Provide your alpha advisor analysis in the JSON format specified above."""
 
-            agent = ChatAgent(
-                chat_client=self._get_client(model),
+            agent = Agent(
+                client=self._get_client(model),
                 name=f"Alpha_{agent_type}",
                 instructions=instructions,
             )
@@ -1044,8 +1044,8 @@ Previous activities for {symbol}:
 Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Do NOT use any browser tools — analyze the data provided and output your activity in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
-            agent = ChatAgent(
-                chat_client=self._get_client(model),
+            agent = Agent(
+                client=self._get_client(model),
                 name=name,
                 instructions=instructions,
             )
@@ -1368,8 +1368,8 @@ Previous monitor activities for {symbol}:
 Current timestamp: {analysis_ts}
 Analyze the position risk and output your response in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
-        agent = ChatAgent(
-            chat_client=self._get_client(model),
+        agent = Agent(
+            client=self._get_client(model),
             name=name,
             instructions=instructions,
         )
@@ -1429,8 +1429,8 @@ Pick a candidate by its row number. Use the pre-computed values (net credit, DTE
 Current timestamp: {analysis_ts}
 Output your activity in the required JSON format. Use the timestamp above in your JSON output; do NOT generate your own."""
 
-        agent = ChatAgent(
-            chat_client=self._get_client(model),
+        agent = Agent(
+            client=self._get_client(model),
             name=f"{name}_roll",
             instructions=roll_instructions,
         )
@@ -2166,9 +2166,9 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
 """
             
             # Run the agent
-            agent = ChatAgent(name="SummaryAgent", chat_client=self._get_client(model))
+            agent = Agent(name="SummaryAgent", client=self._get_client(model))
             print("🤖 Running summary agent...")
-            logger.info("Invoking ChatAgent with %d symbols", len(activities_by_symbol))
+            logger.info("Invoking Agent with %d symbols", len(activities_by_symbol))
             
             run_start = time.time()
             response = await agent.run(prompt)
@@ -2238,7 +2238,7 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
     ) -> str:
         """Generate a comprehensive position/situation report for a symbol.
 
-        Uses ChatAgent to produce a structured markdown report from
+        Uses Agent to produce a structured markdown report from
         pre-gathered context (market data + CosmosDB activities).
 
         Args:
@@ -2271,8 +2271,8 @@ Every symbol listed in the portfolio overview MUST appear in the corresponding s
 Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Do NOT use any browser tools — analyze the data provided and generate your report."""
 
-        agent = ChatAgent(
-            chat_client=self._get_client(model),
+        agent = Agent(
+            client=self._get_client(model),
             name="ReportAgent",
             instructions=TV_REPORT_INSTRUCTIONS,
         )
@@ -2319,7 +2319,7 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
     ) -> str:
         """Generate a detailed technical analysis for a symbol.
 
-        Uses ChatAgent to produce a structured markdown analysis from
+        Uses Agent to produce a structured markdown analysis from
         pre-gathered market data (technicals, overview, forecast, dividends).
 
         Args:
@@ -2352,8 +2352,8 @@ All market data has been pre-fetched above. Do NOT use any browser tools — ana
 Current timestamp: {analysis_ts}
 All market data has been pre-fetched above. Please analyze this data and generate your analysis."""
 
-        agent = ChatAgent(
-            chat_client=self._get_client(model),
+        agent = Agent(
+            client=self._get_client(model),
             name="TechnicalAnalysisAgent",
             instructions=TECHNICAL_ANALYSIS_INSTRUCTIONS,
         )
