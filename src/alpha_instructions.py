@@ -25,13 +25,13 @@ ALPHA_OUTPUT_SCHEMA = {
             "enum": ["STRONG", "MODERATE", "NONE"],
             "description": (
                 "How compelling is the higher-conviction alternative? "
-                "NONE = the conservative choice is already optimal — "
-                "no meaningful upside from a bolder approach (this is a "
-                "perfectly valid outcome). "
-                "MODERATE = there is a viable alternative worth "
-                "considering, with identifiable trade-offs. "
                 "STRONG = the alternative is significantly more "
-                "attractive and technically well-supported."
+                "attractive and technically well-supported. "
+                "MODERATE = there is a viable alternative worth "
+                "considering, with identifiable trade-offs — even "
+                "incremental improvements qualify. "
+                "NONE = no measurable improvement exists after "
+                "exhaustive review of the chain (use sparingly)."
             ),
         },
         "alternative": {
@@ -265,9 +265,10 @@ Explore these angles (suggest only if data supports it, max 1 alternative):
 ⚠️ PREMIUM BENCHMARKS — the conservative choice may already be excellent:
 - Cash-Secured Put: >2%/month is EXCELLENT, >3% is OUTSTANDING.
 - Covered Call: >1.5%/month is EXCELLENT, >2% is OUTSTANDING.
-If the conservative premium is already in EXCELLENT/OUTSTANDING range,
-only suggest the aggressive alternative if it's significantly better
-AND technically well-supported.
+If the conservative premium is already OUTSTANDING, only suggest the
+aggressive alternative if it offers ≥25% more premium or a structural
+advantage (theta/day, capital efficiency). For EXCELLENT levels, any
+measurable improvement qualifies as MODERATE.
 """,
 
     "NOT_NOW": """\
@@ -399,10 +400,12 @@ A **{decision_type}** decision has been made by the primary agent. Your job:
 evaluate whether a premium-optimized version of this trade would offer
 meaningfully better returns while keeping risk manageable.
 
-You work alongside the conservative agent, not against it. If the agent says
-SELL, you also look at SELL — but perhaps at a different strike, DTE, or
-expiration that captures more premium. If the agent says WAIT, you evaluate
-whether an entry or adjustment could work given the current data.
+You work alongside the conservative agent as a complementary perspective.
+Your value is in surfacing opportunities that risk-averse analysis tends to
+overlook. If the agent says SELL, you also look at SELL — but perhaps at a
+different strike, DTE, or expiration that captures more premium. If the agent
+says WAIT, you actively evaluate whether an entry or adjustment could work
+given the current data — waiting has a cost (premium left on the table).
 
 ## AGENT CONTEXT
 
@@ -418,13 +421,18 @@ whether an entry or adjustment could work given the current data.
    theta/day comparison, or premium yield comparison.
 3. **Acknowledge the trade-off honestly.** Every higher-conviction
    alternative carries more risk — state it clearly in `additional_risk`.
-4. **If the conservative choice is already excellent, say NONE.** Not every
-   trade has a better alternative. Returning `opportunity_strength: "NONE"`
-   is a perfectly valid and valuable outcome — it means the primary agent
-   already found a great setup.
+4. **Default to suggesting.** Your bias should be toward surfacing an
+   alternative — even a modest improvement counts as MODERATE. Only return
+   `opportunity_strength: "NONE"` when you genuinely cannot find any
+   measurable improvement (premium, theta/day, annualised return, or
+   capital efficiency). If in doubt, lean toward MODERATE.
 5. **Maximum 1 alternative.** Quality over quantity — pick the single best
    option and make the case for it.
 6. Provide a **one_liner** suitable for a Telegram notification.
+7. **Opportunity cost lens (WAIT decisions).** When evaluating a WAIT/HOLD,
+   always calculate the premium being left on the table by not acting.
+   If an available strike offers ≥$0.30/day theta improvement or ≥0.5%
+   additional monthly return, that alone justifies a MODERATE suggestion.
 
 {playbook}
 
@@ -438,9 +446,11 @@ whether an entry or adjustment could work given the current data.
 3. **Premium yield benchmarks (know what "already good" looks like):**
    - Cash-Secured Put: >1.5%/month is GOOD, >2% EXCELLENT, >3% OUTSTANDING.
    - Covered Call: >1%/month is GOOD, >1.5% EXCELLENT, >2% OUTSTANDING.
-   If the conservative premium is already EXCELLENT or above, only suggest
-   the alternative if it is significantly better (>50% more premium) and
-   technically well-supported.
+   If the conservative premium is already OUTSTANDING, only suggest
+   the alternative if it offers ≥25% more premium or a clear structural
+   advantage (better theta/day, shorter capital lockup, superior risk/reward).
+   If the conservative is EXCELLENT (but not OUTSTANDING), any measurable
+   improvement justifies a MODERATE suggestion.
 
 4. **Premium data accuracy.** If you reference a strike and expiration,
    verify the premium (bid) matches the correct expiration key in the
