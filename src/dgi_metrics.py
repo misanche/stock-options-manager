@@ -301,13 +301,12 @@ def _compute_threshold_line(target: float) -> Dict[str, float]:
     differentiation without extreme values.
     """
     weights = {
-        "dividend_yield": 0.15,
-        "dividend_growth": 0.18,
-        "payout_safety": 0.10,
-        "valuation": 0.10,
-        "financial_health": 0.07,
+        "dividend_yield": 0.20,
+        "dividend_growth": 0.25,
+        "payout_safety": 0.18,
+        "valuation": 0.15,
+        "financial_health": 0.12,
         "consistency": 0.10,
-        "technical_timing": 0.30,
     }
     sum_w_sq = sum(w ** 2 for w in weights.values())
     alpha = 100
@@ -326,7 +325,7 @@ def calculate_quality_score(
     metrics: Dict[str, Any],
     technical: Dict[str, Any],
 ) -> float:
-    """Weighted quality score: 70 % fundamental + 30 % technical timing.
+    """Weighted quality score: 100% fundamental (tech timing is a separate metric).
 
     Parameters
     ----------
@@ -335,7 +334,7 @@ def calculate_quality_score(
         pe_ratio, debt_to_equity, roe, years_consecutive_increases.
     technical:
         Dict returned by :func:`calculate_technical_timing_score`
-        (must contain ``"score"``).
+        (kept for API compatibility but not used in scoring).
     """
     yield_s = _dividend_yield_score(metrics.get("dividend_yield", 0))
     growth_s = _dividend_growth_score(metrics.get("dividend_cagr_5y", 0))
@@ -346,16 +345,14 @@ def calculate_quality_score(
         metrics.get("roe", 0),
     )
     consist_s = _consistency_score(metrics.get("years_consecutive_increases", 0))
-    tech_s = technical.get("score", 0)
 
     score = (
-        yield_s * 0.15
-        + growth_s * 0.18
-        + payout_s * 0.10
-        + val_s * 0.10
-        + health_s * 0.07
+        yield_s * 0.20
+        + growth_s * 0.25
+        + payout_s * 0.18
+        + val_s * 0.15
+        + health_s * 0.12
         + consist_s * 0.10
-        + tech_s * 0.30
     )
     return round(score, 2)
 
@@ -364,7 +361,11 @@ def calculate_quality_score_detailed(
     metrics: Dict[str, Any],
     technical: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Like :func:`calculate_quality_score` but returns all sub-scores."""
+    """Like :func:`calculate_quality_score` but returns all sub-scores.
+
+    Technical timing is included in sub_scores for display/filtering but
+    does NOT contribute to the total quality score.
+    """
     yield_s = _dividend_yield_score(metrics.get("dividend_yield", 0))
     growth_s = _dividend_growth_score(metrics.get("dividend_cagr_5y", 0))
     payout_s = _payout_safety_score(metrics.get("payout_ratio", 1.0))
@@ -380,13 +381,12 @@ def calculate_quality_score_detailed(
     roe_score = _clamp(metrics.get("roe", 0) / 0.30 * 100)
 
     score = (
-        yield_s * 0.15
-        + growth_s * 0.18
-        + payout_s * 0.10
-        + val_s * 0.10
-        + health_s * 0.07
+        yield_s * 0.20
+        + growth_s * 0.25
+        + payout_s * 0.18
+        + val_s * 0.15
+        + health_s * 0.12
         + consist_s * 0.10
-        + tech_s * 0.30
     )
     return {
         "total": round(score, 2),
@@ -400,13 +400,12 @@ def calculate_quality_score_detailed(
             "technical_timing": round(tech_s, 1),
         },
         "weights": {
-            "dividend_yield": 0.15,
-            "dividend_growth": 0.18,
-            "payout_safety": 0.10,
-            "valuation": 0.10,
-            "financial_health": 0.07,
+            "dividend_yield": 0.20,
+            "dividend_growth": 0.25,
+            "payout_safety": 0.18,
+            "valuation": 0.15,
+            "financial_health": 0.12,
             "consistency": 0.10,
-            "technical_timing": 0.30,
         },
         "health_detail": {
             "debt_to_equity_score": round(de_score, 1),
