@@ -201,6 +201,8 @@ async def run_dgi_screener(config, cosmos) -> dict:
         return {"error": "No data from yfinance", "total_screened": total_screened}
 
     # 3. Calculate metrics and score ALL stocks (no hard filter rejection)
+    logger.info("DGI Screener: score_weights=%s", weights)
+    logger.info("DGI Screener: filters=%s", filters)
     candidates = []
     skipped_no_dividend = 0
     errors = 0
@@ -302,9 +304,14 @@ async def run_dgi_screener(config, cosmos) -> dict:
                 entry_tag = "Wait"
 
             category_preview = dgi_metrics.categorize_stock(metrics)
-            logger.info("DGI: %s — quality=%.1f, category=%s", symbol, quality, category_preview)
-            logger.info("[DGI %s] quality_score=%.2f, tech_timing=%.1f, entry_tag=%s",
-                        symbol, quality, tech_timing, entry_tag)
+            logger.info("[DGI %s] quality_score=%.2f, tech_timing=%.1f, entry_tag=%s, category=%s",
+                        symbol, quality, tech_timing, entry_tag, category_preview)
+            # Log quality breakdown components
+            components = quality_detail.get("components", {})
+            if components:
+                logger.info("[DGI %s] score_breakdown: %s",
+                            symbol,
+                            " | ".join(f"{k}={v:.2f}" for k, v in components.items()))
 
             candidates.append({
                 "symbol": symbol,
@@ -323,10 +330,32 @@ async def run_dgi_screener(config, cosmos) -> dict:
     logger.info("DGI Screener: %d scored, %d skipped (no dividends), %d errors, out of %d fetched",
                 len(candidates), skipped_no_dividend, errors, len(batch_data))
 
-    # 4. Sort by score and take exactly top 20
+    # 4. Sort by score and take top N
     candidates.sort(key=lambda x: x["quality_score"], reverse=True)
+
+    # Log full ranking for visibility
+    logger.info("═══ DGI RANKING (all %d candidates sorted by quality score) ═══", len(candidates))
+    for rank, c in enumerate(candidates, 1):
+        marker = "✅" if rank <= top_n else "❌"
+        logger.info("  %s #%03d  %-6s  score=%.2f  tech=%.1f  tag=%-12s  yield=%.2f%%  cagr=%.1f%%  years=%d",
+                    marker, rank, c["symbol"], c["quality_score"],
+                    c["technicals"].get("score", 0),
+                    c.get("entry_tag", ""),
+                    c["metrics"]["dividend_yield"] * 100,
+                    c["metrics"]["dividend_cagr_5y"] * 100,
+                    c["metrics"]["years_consecutive_increases"])
+
     top_entries = candidates[:top_n]
-    logger.info("DGI Screener: keeping top %d out of %d candidates", len(top_entries), len(candidates))
+    cutoff_score = top_entries[-1]["quality_score"] if top_entries else 0
+    logger.info("═══ DGI TOP %d CUTOFF: score >= %.2f ═══", top_n, cutoff_score)
+    logger.info("DGI Screener: keeping top %d out of %d candidates (cutoff=%.2f)",
+                len(top_entries), len(candidates), cutoff_score)
+
+    # Log excluded symbols just below cutoff for context
+    just_missed = candidates[top_n:top_n + 5]
+    if just_missed:
+        logger.info("DGI: Just below cutoff: %s",
+                    ", ".join(f"{c['symbol']}({c['quality_score']:.2f})" for c in just_missed))
 
     # 7. Categorize each
     for i, entry in enumerate(top_entries):
