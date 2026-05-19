@@ -755,7 +755,7 @@ pip install -r requirements.txt
 ```
 
 This installs:
-- `agent-framework[foundry]` - Microsoft Agent Framework with Foundry support
+- `agent-framework-core` + `agent-framework-openai` - Microsoft Agent Framework core SDK and Azure OpenAI integration
 - `yfinance` - Yahoo Finance data provider (overview, technicals, forecast, dividends, options chains)
 - `py-vollib` - Black-Scholes Greeks computation for options chain data
 - `pandas-ta` - Technical analysis indicators (RSI, MACD, moving averages, etc.)
@@ -1177,7 +1177,7 @@ Make sure you've exported the environment variable with your Azure AI Foundry pr
 Ensure your `AZURE_OPENAI_API_KEY` environment variable is set correctly. You can get your API key from the Azure Portal under your Azure OpenAI resource.
 
 ### Module Import Errors
-Make sure you installed the correct SDK: `pip install agent-framework[foundry]` (NOT `azure-ai-agents`)
+Make sure you installed the correct SDK packages: `pip install agent-framework-core agent-framework-openai` (NOT `azure-ai-agents`)
 
 ## Development
 
@@ -1194,8 +1194,8 @@ All instructions assume pre-fetched market data — the LLM receives data as tex
 This project uses the **Microsoft Agent Framework** (`agent-framework` package from https://github.com/microsoft/agent-framework).
 
 Key components:
-- `agent_framework.Agent` - Main agent class
-- `agent_framework.foundry.FoundryChatClient` - Azure AI Foundry integration
+- `agent_framework.ChatAgent` - Main chat agent class
+- `agent_framework.integrations.azure.openai.AzureAIAgentClient` - Azure OpenAI integration
 
 Market data is fetched via `yfinance` Python library — overview, technicals, forecast, dividends, and options chains are all retrieved through Yahoo Finance's API. All fetching is driven from Python (`yfinance_data_provider.py`), not by the LLM. The LLM receives pre-fetched data as text and performs analysis only — no tools are given to the agent.
 
