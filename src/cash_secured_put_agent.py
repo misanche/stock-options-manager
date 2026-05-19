@@ -42,9 +42,9 @@ async def run_cash_secured_put_analysis(config, runner: AgentRunner,
     symbol_names = [s["symbol"] for s in csp_symbols]
     print(f"Analyzing {len(csp_symbols)} symbols: {', '.join(symbol_names)}")
 
-    from .yfinance_data_provider import create_provider
+    from .yfinance_data_provider import get_shared_provider
 
-    provider = create_provider(getattr(config, 'yfinance_config', None))
+    provider = get_shared_provider(getattr(config, 'yfinance_config', None))
     for sym_doc in csp_symbols:
         await runner.run_symbol_agent(
             name="CashSecuredPutAgent",

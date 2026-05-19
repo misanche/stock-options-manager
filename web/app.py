@@ -236,9 +236,9 @@ async def startup():
     await init_cosmos(app)
     # Initialize yfinance provider singleton
     try:
-        from src.yfinance_data_provider import create_provider
-        app.state.yf_provider = create_provider()
-        logger.info("YFinance data provider initialized successfully")
+        from src.yfinance_data_provider import get_shared_provider
+        app.state.yf_provider = get_shared_provider()
+        logger.info("YFinance data provider initialized successfully (shared singleton)")
     except Exception as e:
         logger.exception("YFinance provider init failed")
         app.state.yf_provider = None
@@ -2968,8 +2968,8 @@ async def _build_symbol_context(symbol: str, cosmos,
     if preferences.get('market_data', True):
         try:
             if provider is None:
-                from src.yfinance_data_provider import create_provider
-                provider = create_provider()
+                from src.yfinance_data_provider import get_shared_provider
+                provider = get_shared_provider()
 
             market_data = await provider.fetch_all(symbol, force_refresh=force_refresh)
 

@@ -216,7 +216,7 @@ class OptionsAgentScheduler:
             print("⏭️  Options chain scheduler disabled in config")
             return
         
-        from .yfinance_data_provider import create_provider
+        from .yfinance_data_provider import get_shared_provider
         
         tz = pytz.timezone(self.config.timezone)
         now_tz = datetime.now(tz)
@@ -230,7 +230,7 @@ class OptionsAgentScheduler:
         success_count = 0
         error_count = 0
         
-        provider = create_provider(getattr(self.config, 'yfinance_config', None))
+        provider = get_shared_provider(getattr(self.config, 'yfinance_config', None))
         for sym_doc in symbols:
             symbol = sym_doc["symbol"]
             

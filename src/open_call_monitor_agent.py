@@ -51,9 +51,9 @@ async def run_open_call_monitor(config, runner: AgentRunner,
     total = sum(len(s["_active_positions"]) for s in call_symbols)
     print(f"Monitoring {total} open call position(s)")
 
-    from .yfinance_data_provider import create_provider
+    from .yfinance_data_provider import get_shared_provider
 
-    provider = create_provider(getattr(config, 'yfinance_config', None))
+    provider = get_shared_provider(getattr(config, 'yfinance_config', None))
     for sym_doc in call_symbols:
         for pos in sym_doc["_active_positions"]:
             await runner.run_position_monitor(

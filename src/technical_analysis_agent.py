@@ -49,9 +49,9 @@ async def run_technical_analysis(
 
     # 2. Market data via yfinance provider (all sections except options chain)
     try:
-        from .yfinance_data_provider import create_provider
+        from .yfinance_data_provider import get_shared_provider
 
-        provider = create_provider(getattr(config, 'yfinance_config', None))
+        provider = get_shared_provider(getattr(config, 'yfinance_config', None))
         yf_data = await provider.fetch_all(symbol)
         cached_resources = yf_data.get("cached_resources", [])
 

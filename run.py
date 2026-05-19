@@ -74,9 +74,9 @@ async def lifespan(app):
     import logging
     _logger = logging.getLogger(__name__)
     try:
-        from src.yfinance_data_provider import create_provider
-        app.state.yf_provider = create_provider()
-        _logger.info("YFinance data provider initialized successfully")
+        from src.yfinance_data_provider import get_shared_provider
+        app.state.yf_provider = get_shared_provider()
+        _logger.info("YFinance data provider initialized successfully (shared singleton)")
     except Exception as e:
         _logger.exception("YFinance provider init failed")
         app.state.yf_provider = None

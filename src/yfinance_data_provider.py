@@ -713,3 +713,27 @@ def create_provider(config: Optional[dict] = None) -> YFinanceDataProvider:
     """Factory function — drop-in replacement for create_fetcher()."""
     fetcher = YFinanceFetcher()
     return YFinanceDataProvider(fetcher, config)
+
+
+# ======================================================================
+# Shared singleton — centralized in-memory cache across all callers
+# ======================================================================
+
+_shared_provider: Optional[YFinanceDataProvider] = None
+_shared_provider_lock = __import__("threading").Lock()
+
+
+def get_shared_provider(config: Optional[dict] = None) -> YFinanceDataProvider:
+    """Return a process-wide shared provider instance.
+
+    All callers (web app, scheduler, agents) share the same in-memory
+    cache when using this function.  The first call initializes the
+    singleton; subsequent calls return the same instance (config param
+    is ignored after initialization).
+    """
+    global _shared_provider
+    if _shared_provider is None:
+        with _shared_provider_lock:
+            if _shared_provider is None:
+                _shared_provider = create_provider(config)
+    return _shared_provider

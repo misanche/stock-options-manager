@@ -20,7 +20,7 @@ from .options_chain_filters import (
     filter_options_chain_by_roll_direction,
     format_roll_candidates_table,
 )
-from .yfinance_data_provider import YFinanceDataProvider, create_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
+from .yfinance_data_provider import YFinanceDataProvider, create_provider, get_shared_provider, OPTIONS_CHAIN_SCHEMA_DESCRIPTION
 from .supervisor_instructions import get_supervisor_instructions, SUPERVISOR_OUTPUT_SCHEMA
 from .alpha_instructions import get_alpha_instructions, ALPHA_OUTPUT_SCHEMA
 
