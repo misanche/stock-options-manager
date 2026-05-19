@@ -521,8 +521,8 @@
         var qd = entry.quality_detail;
         if (qd && qd.sub_scores) {
             radarContainer.style.display = '';
-            var radarLabels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency', 'Tech Timing'];
-            var radarKeys = ['dividend_yield', 'dividend_growth', 'payout_safety', 'valuation', 'financial_health', 'consistency', 'technical_timing'];
+            var radarLabels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency'];
+            var radarKeys = ['dividend_yield', 'dividend_growth', 'payout_safety', 'valuation', 'financial_health', 'consistency'];
             var radarData = radarKeys.map(function(k) { return qd.sub_scores[k] || 0; });
             var radarMin = radarKeys.map(function(k) { return (qd.minimum_thresholds && qd.minimum_thresholds[k]) || 65; });
             var radarIdeal = radarKeys.map(function(k) { return (qd.ideal_thresholds && qd.ideal_thresholds[k]) || 80; });

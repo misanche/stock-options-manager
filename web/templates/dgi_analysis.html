@@ -125,7 +125,7 @@
 
     <!-- Technical Sub-Scores -->
     <div class="card" style="padding:1.25rem;">
-        <h3 style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:1rem;">Technical Timing (30% weight)</h3>
+        <h3 style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:1rem;">Technical Timing (informational)</h3>
 
         {% set tech_score = t.score | default(0) %}
         <div style="margin-bottom:1.25rem;">
@@ -218,8 +218,8 @@
     var sub = {{ result.quality_detail.sub_scores | tojson }};
     var thresholds = {{ result.quality_detail.minimum_thresholds | tojson }};
     var idealThresholds = {{ result.quality_detail.ideal_thresholds | tojson }};
-    var labels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency', 'Tech Timing'];
-    var keys = ['dividend_yield', 'dividend_growth', 'payout_safety', 'valuation', 'financial_health', 'consistency', 'technical_timing'];
+    var labels = ['Div Yield', 'Div Growth', 'Payout Safety', 'Valuation', 'Fin. Health', 'Consistency'];
+    var keys = ['dividend_yield', 'dividend_growth', 'payout_safety', 'valuation', 'financial_health', 'consistency'];
     var data = keys.map(function(k) { return sub[k]; });
     var thresholdData = keys.map(function(k) { return thresholds[k]; });
     var idealData = keys.map(function(k) { return idealThresholds[k]; });
