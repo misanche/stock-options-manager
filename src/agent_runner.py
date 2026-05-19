@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from agent_framework import ChatAgent
-from agent_framework.azure import AzureOpenAIChatClient
+from agent_framework.integrations.azure.openai import AzureAIAgentClient
 
 from .cosmos_db import CosmosDBService
 from .context import ContextProvider
@@ -74,23 +74,23 @@ class AgentRunner:
         self._endpoint = project_endpoint
         self._api_key = api_key
         self._default_model = model
-        self._clients: Dict[str, AzureOpenAIChatClient] = {}
+        self._clients: Dict[str, AzureAIAgentClient] = {}
         self.telegram_notifier = telegram_notifier
 
-    def _get_client(self, model: str = None) -> AzureOpenAIChatClient:
-        """Return a cached AzureOpenAIChatClient for the given deployment name."""
+    def _get_client(self, model: str = None) -> AzureAIAgentClient:
+        """Return a cached AzureAIAgentClient for the given deployment name."""
         deployment = model or self._default_model
         if deployment not in self._clients:
-            logger.info("Creating AzureOpenAIChatClient for deployment=%s", deployment)
-            self._clients[deployment] = AzureOpenAIChatClient(
+            logger.info("Creating AzureAIAgentClient for deployment=%s", deployment)
+            self._clients[deployment] = AzureAIAgentClient(
                 endpoint=self._endpoint,
-                deployment_name=deployment,
+                model_deployment=deployment,
                 api_key=self._api_key,
             )
         return self._clients[deployment]
 
     @property
-    def client(self) -> AzureOpenAIChatClient:
+    def client(self) -> AzureAIAgentClient:
         """Backward-compatible accessor — returns the default model client."""
         return self._get_client()
     
